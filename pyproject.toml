@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-local-mcp"
+version = "0.1.0"
+description = "Local persistent Codex subagents over MCP, with durable events and human approvals"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+codex-local-mcp = "codex_local_mcp.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_local_mcp*"]

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "codex": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "/absolute/path/to/codex-mcp/server.py",
+        "serve"
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "codex": {
+      "type": "stdio",
+      "command": "py",
+      "args": ["-3", "C:\\Tools\\codex-mcp\\server.py", "serve"]
+    }
+  }
+}
