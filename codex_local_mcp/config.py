@@ -83,7 +83,13 @@ def load_config(filename=None, legacy_stop=False):
     toolchains = data.get("toolchain_paths", [])
     if not isinstance(toolchains, list) or any(not isinstance(p, str) or not Path(p).expanduser().is_absolute() for p in toolchains):
         raise BridgeError("toolchain_paths must be an array of absolute paths")
-    toolchains = tuple(Path(p).expanduser().resolve(strict=True) for p in toolchains)
+    resolved = []
+    for entry in toolchains:
+        try:
+            resolved.append(Path(entry).expanduser().resolve(strict=True))
+        except OSError as exc:
+            raise BridgeError(f"toolchain_paths entry does not exist or is inaccessible: {entry}") from exc
+    toolchains = tuple(resolved)
     if any(within(Path.home().resolve(), p) or within(state, p) or (path and within(path, p)) for p in toolchains):
         raise BridgeError("Toolchain paths must not contain the home directory, configuration or broker state")
     return Config(path.resolve() if path else None, state, executable, maximum,

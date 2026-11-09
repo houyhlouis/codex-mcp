@@ -16,9 +16,8 @@ from mcp.types import ElicitResult
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
-from codex_local_mcp.broker import rpc
 from codex_local_mcp.config import load_config
-from tests.helpers import install_fake_codex, write_config, wait_for_broker_stop, temp_root
+from tests.helpers import install_fake_codex, write_config, stop_test_broker, temp_root
 
 
 async def main():
@@ -66,11 +65,7 @@ async def main():
                     assert current["status"] == "completed"
                     print("Official MCP 1.26.0 client: initialize, 32 tool schemas, structured results, coding lifecycle and form elicitation passed")
         finally:
-            try:
-                await rpc(config, "stop")
-                await wait_for_broker_stop(config)
-            except (FileNotFoundError, ConnectionRefusedError):
-                pass
+            await stop_test_broker(config)
 
 
 asyncio.run(main())

@@ -281,6 +281,8 @@ class ExtendedControls:
             await self.backend.call("thread/settings/update", params)
             task = self.task(task_id)
             task.update(values)
+            if task.get("service_tier") == "default":
+                task["service_tier"] = None
             if model or effort:
                 task.update(model=candidate["model"], effort=candidate["effort"])
             if approval_mode:

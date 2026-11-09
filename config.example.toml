@@ -1,21 +1,27 @@
-# Optional server settings. No configuration file is needed for normal use.
-# The main agent creates/selects work directories through MCP tools.
-# Keep a real settings file outside any directory given to a coding task.
-# Paths support a leading ~, but do not expand shell environment variables.
-# Defaults: %LOCALAPPDATA%/CodexMCP on Windows; ~/.local/state/codex-mcp on Unix.
+# Optional Codex MCP settings. Normal use needs no settings file.
+# Use it with:  python3 server.py --config /absolute/path/config.toml serve
+# Keep this file outside every project folder you give to Codex, and make it
+# private (chmod 600 on macOS/Linux). Paths may start with ~; environment
+# variables such as $HOME or %USERPROFILE% are not expanded.
+# See docs/configuration.md for details.
+
+# Private broker state (database, log, socket). Defaults:
+#   macOS/Linux: ~/.local/state/codex-mcp   Windows: %LOCALAPPDATA%\CodexMCP
 # state_dir = "/absolute/private/state/codex-mcp"
+
+# Codex executable. A bare name is looked up on PATH only.
 codex_binary = "codex"
+
+# Independent task families that may run at the same time (1-32).
 max_tasks = 4
 
-# Optional, operator-reviewed READ-ONLY runtime/dependency paths.
-# System runtimes and the exact Codex executable are already readable.
+# Extra read-only paths for the sandbox (for example an unusual toolchain).
 toolchain_paths = []
 
-# Default: positive approvals require MCP human elicitation or terminal review.
-# Enable only if you explicitly trust the main agent to relay your decisions.
+# true lets the main agent APPROVE requests on your behalf. Not needed for
+# "Approve for me" (Codex's automatic reviewer). Keep false unless you trust it.
 approval_relay = false
 
-# External MCP servers/plugins can act outside filesystem sandbox boundaries.
-# Disabled for bridge threads by default. Existing Codex configuration is not edited.
+# true lets Codex tasks use external MCP servers/plugins from your Codex setup.
+# They run outside the project sandbox.
 allow_external_tools = false
-

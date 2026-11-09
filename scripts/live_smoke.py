@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Opt-in live test: uses the configured Codex account and consumes real usage.
+"""Opt-in live test: uses the signed-in Codex account and consumes real usage.
 
-Use a disposable, empty configured workspace. It creates calculator.py and its
-unit test there. Never run this against a production project.
+Pass an empty, disposable project directory with --workdir. The test creates
+calculator.py and its unit test there. Never run it against a real project.
 """
 
 import argparse

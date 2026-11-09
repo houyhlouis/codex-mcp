@@ -4,7 +4,7 @@ import json
 from codex_local_mcp.security import BridgeError
 from codex_local_mcp.tools import dispatch, arguments
 from tests.test_service import ServiceHarness
-from tests.helpers import link_or_skip
+from tests.helpers import link_or_skip, read_fake_history
 
 
 class ExtensionsTest(ServiceHarness):
@@ -18,7 +18,7 @@ class ExtensionsTest(ServiceHarness):
             "approval_mode": "approve_for_me", "request_id": "auto"})
         self.assertEqual(task["approval_mode"], "approve_for_me")
         self.assertEqual(task["approvals_reviewer"], "auto_review")
-        native = json.loads((self.state / "fake-history.json").read_text())[task["thread_id"]]
+        native = read_fake_history(self.state)[task["thread_id"]]
         self.assertEqual(native["options"]["approvalsReviewer"], "auto_review")
         self.assertEqual(native["options"]["approvalPolicy"], "on-request")
         self.assertNotIn("sandbox", native["options"])

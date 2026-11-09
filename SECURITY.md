@@ -1,13 +1,21 @@
-# Security
+# Security policy
 
-The [security model](docs/security.md) describes the local trust boundary, native permissions, human/automatic review, credential handling, and retained data. The service is intended for one trusted local OS user and approved project roots; it is not a multi-user or remote service.
+Codex MCP is designed for **one trusted local user** and explicitly selected project folders. It is not a multi-user or remote service. The full trust model is in [docs/security.md](docs/security.md).
 
-## Reporting an issue
+## Reporting a vulnerability
 
-If private vulnerability reporting is enabled for the published repository, use that channel. Otherwise contact the repository maintainer privately before posting a report containing sensitive details. No maintainer email address or repository URL is configured in this source snapshot.
+Please report vulnerabilities privately. Use GitHub's **Security → Report a vulnerability** (private vulnerability reporting) on the repository if it is enabled; otherwise contact the repository owner directly. Do not open a public issue containing exploit details.
 
-Include a minimal reproduction, affected version, platform/Codex version, and the boundary crossed. Redact credentials, personal information and project content. Do not upload a complete state directory, native authentication file or unredacted conversation history.
+Include:
 
-## Local incident handling
+- a minimal way to reproduce it;
+- the Codex MCP version (`python3 server.py --version`), Codex version, operating system and MCP client;
+- which boundary was crossed (for example project sandbox, approval routing or local IPC).
 
-Stop the broker with the normal `stop` command if continued execution is unwanted. Retain only the local evidence needed to diagnose the issue and review it before sharing. Manage any affected credentials through their native provider's authorized process; the bridge does not rotate or replace credentials.
+Redact credentials, personal data and project content. Never send a state folder, Codex authentication files or unredacted conversation history.
+
+## If something goes wrong locally
+
+1. Stop the broker: `python3 server.py stop`.
+2. Keep only the evidence you need (for example the relevant part of `broker.log`) and review it before sharing.
+3. If credentials may be affected, rotate them through the provider's normal process. The bridge never handles or rotates credentials.

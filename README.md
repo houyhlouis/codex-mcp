@@ -2,141 +2,240 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**Give your main agent a Codex coding subagent that can ask questions, accept follow-ups, and keep working across reconnects.**
+**Let Claude Code (or any MCP client) hand coding work to your local OpenAI Codex CLI, and keep a two-way conversation with it.**
 
-Codex MCP connects Claude Code and other MCP clients to your installed Codex CLI. It supports persistent conversations, native Codex subagents, and **Approve for me**, with 32 tools for the coding workflow.
+Codex MCP is a small local MCP server. It turns the Codex CLI on your computer into a persistent coding subagent for your main AI agent:
 
-## Quick start
+- **Persistent conversations.** Start a task, send follow-ups, steer or interrupt it, and resume it after a restart.
+- **Two-way communication.** Codex can ask the main agent questions (`ask_parent`), and the main agent answers them.
+- **Safe approvals.** Nothing is approved silently. Approvals go to you, or to Codex's own automatic reviewer if you choose *Approve for me*.
+- **Project-scoped sandbox.** Each task can only access the project directory it was given.
+- **Native Codex features.** Subagents, plan mode, code review, forks, queues, history and more: 32 tools in total.
+- **No extra dependencies.** Uses only the Python standard library. Works on Windows, macOS and Linux, using local pipes and sockets only (never a network port).
 
-You need **Python 3.11+**, **Codex CLI 0.167.0+**, and a working native Codex login. Run `codex login` if you have not signed in. Use the same local account for the main agent, bridge and Codex.
+## Contents
 
-### 1. Connect Claude Code
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Your first task](#your-first-task)
+- [Approvals](#approvals)
+- [Updating and uninstalling](#updating-and-uninstalling)
+- [Troubleshooting](#troubleshooting)
+- [How it works](#how-it-works)
+- [Documentation](#documentation)
+- [Development](#development)
 
-From this source directory:
+## Requirements
 
-**macOS / Linux**
+| You need | Version | Check with |
+|---|---|---|
+| Python | 3.11 or newer | `python3 --version` (Windows: `py -3 --version`) |
+| OpenAI Codex CLI | 0.167.0 or newer | `codex --version` |
+| A Codex sign-in | ChatGPT account or API key | `codex login status` |
+| An MCP client | for example Claude Code or Claude Desktop | |
+
+Codex's own sandbox must work on your computer. The bridge never turns it off. On Windows, Codex's legacy `unelevated` sandbox is not supported; use the sandbox mode Codex sets up by default (see [installation details](docs/installation.md#windows-notes)).
+
+## Installation
+
+The steps below use Claude Code. For other clients, see [Step 5](#step-5-connect-your-mcp-client) and [docs/installation.md](docs/installation.md).
+
+### Step 1: Install Python
+
+- **Windows:** Install Python 3.11+ from [python.org](https://www.python.org/downloads/). In the installer, tick **Add python.exe to PATH**. This also installs the `py` launcher used below.
+- **macOS:** `brew install python`, or use the installer from python.org.
+- **Linux:** Use your distribution's package, for example `sudo apt install python3`.
+
+### Step 2: Install and sign in to Codex
 
 ```bash
-claude mcp add --transport stdio codex -- python3 "$PWD/server.py" serve
+npm install -g @openai/codex
+codex login
 ```
 
-**Windows PowerShell**
+Any official installation method works. See [OpenAI's Codex CLI guide](https://developers.openai.com/codex/cli). Then check:
+
+```bash
+codex --version
+codex login status
+```
+
+The version must be **0.167.0 or newer**. Run `codex update` to upgrade an older installation.
+
+### Step 3: Download Codex MCP
+
+Keep the folder in a permanent location (for example `~/tools/codex-mcp` or `C:\Tools\codex-mcp`), because your MCP client runs the server from there.
+
+- **Git:**
+
+  ```bash
+  git clone https://github.com/houyhlouis/codex-mcp.git
+  cd codex-mcp
+  ```
+
+- **GitHub Desktop:** Choose **File → Clone repository**, select `codex-mcp`, choose a local path, and click **Clone**.
+- **ZIP:** On GitHub, click **Code → Download ZIP** and extract it.
+
+The repository is private, so you must be signed in to GitHub with access to it.
+
+### Step 4: Check that it works
+
+Run these commands in the `codex-mcp` folder.
+
+macOS / Linux:
+
+```bash
+python3 server.py --version
+python3 server.py status
+```
+
+Windows (PowerShell):
 
 ```powershell
-claude mcp add --transport stdio codex -- py -3 "$PWD\server.py" serve
+py -3 server.py --version
+py -3 server.py status
 ```
 
-No workspace configuration is needed. The main agent chooses or creates the directory for each project.
+`status` starts the background broker and Codex, then prints JSON that should include `"signed_in": true`. It does not run a model or use any quota. The broker keeps running in the background and is started again automatically when it is needed.
 
-### 2. Start using it
+### Step 5: Connect your MCP client
 
-Ask your main agent:
+**Claude Code.** Run this inside the `codex-mcp` folder.
+
+macOS / Linux:
+
+```bash
+claude mcp add --transport stdio --scope user codex -- python3 "$PWD/server.py" serve
+```
+
+Windows (PowerShell):
+
+```powershell
+claude mcp add --transport stdio --scope user codex -- py -3 "$PWD\server.py" serve
+```
+
+`--scope user` makes the server available in all your projects. Leave it out to add it to the current project only. Check the connection with `claude mcp list`, or type `/mcp` inside Claude Code. `codex` should show as connected.
+
+**Claude Desktop and other clients.** Add this to the client's MCP configuration file (for Claude Desktop: **Settings → Developer → Edit Config**), then restart the client:
+
+```json
+{
+  "mcpServers": {
+    "codex": {
+      "command": "python3",
+      "args": ["/absolute/path/to/codex-mcp/server.py", "serve"]
+    }
+  }
+}
+```
+
+On Windows use `"command": "py"` and `"args": ["-3", "C:\\Tools\\codex-mcp\\server.py", "serve"]`. Ready-made files: [examples/mcp.json](examples/mcp.json) and [examples/mcp.windows.json](examples/mcp.windows.json).
+
+### Step 6 (optional): Teach your agent the workflow
+
+Copy [examples/CLAUDE.md](examples/CLAUDE.md) into your project's `CLAUDE.md` (or your agent's instructions file). It explains how to poll for progress, answer questions and treat approvals.
+
+No configuration file is needed. Optional settings, such as a custom Codex path or concurrency limit, are described in [docs/configuration.md](docs/configuration.md).
+
+## Your first task
+
+Ask your main agent in plain language:
 
 ```text
-Use Codex in this project to review my changes and fix the failing tests.
-Keep me updated and answer any task-context questions it asks.
+Use Codex in this project to find out why the tests fail and fix them.
+Keep me updated and answer any questions it asks.
 ```
 
 ```text
-Create a project directory for a small command-line app, then ask Codex
-to implement it and add tests. Use Approve for me for this task.
+Create a new project folder ~/projects/todo-cli and ask Codex to build a small
+command-line to-do app with tests. Use "Approve for me" for this task.
 ```
-
-Check `/mcp` in Claude Code to confirm the connection. Other clients can use the [stdio configuration examples](examples/mcp.json) and [Windows example](examples/mcp.windows.json).
-
-## Features
-
-- **Persistent conversations** — continue, steer or interrupt work without losing the thread.
-- **Two-way communication** — Codex can call `ask_parent`; the main agent answers through MCP.
-- **Native subagents** — delegate through Codex and collect child progress, results and approval requests.
-- **Native automatic review** — select `approve_for_me` while keeping Codex's permission checks.
-- **Session controls** — review, fork, rename, queue, compact, archive and restore conversations.
-- **Reliable progress retrieval** — save task IDs and event cursors, then catch up after reconnecting.
-
-## Examples
-
-**Continue a task**
 
 ```text
-Continue the same Codex conversation. Implement the proposed fix,
-run the relevant tests, and summarize the changed files.
+Continue the same Codex conversation: add a --json flag and run the tests again.
 ```
 
-**Use native subagents**
+Behind the scenes, the main agent selects a project with `codex_projects`, starts work with `codex_start`, and polls `codex_events` until the turn finishes. It answers Codex's questions with `codex_respond` and reads the result with `codex_get`. See the [usage guide](docs/usage.md) for the full workflow and more examples.
 
-```text
-Ask Codex to delegate parser analysis and test analysis to two subagents.
-Wait for their findings before editing files.
-```
+## Approvals
 
-**Review before implementation**
+Codex asks for approval before actions outside its sandbox, such as running a command that needs network access. You choose who decides for each task with `approval_mode`:
 
-```text
-Switch Codex to plan mode and propose the migration steps.
-After I approve the plan, continue in implementation mode.
-```
-
-For explicit calls, the main agent can create a directory with `codex_projects`, then pass the returned `project_id` to `codex_start`. It can also supply an existing absolute `workdir` directly. See [workflow examples](examples/native-controls.md).
-
-## Common tools
-
-| Purpose | Tools |
+| Mode | Who decides |
 |---|---|
-| Projects and models | `codex_projects`, `codex_models` |
-| Start and continue | `codex_start`, `codex_send`, `codex_resume` |
-| Progress and results | `codex_events`, `codex_get`, `codex_list` |
-| Subagents | `codex_delegate`, `codex_subagents` |
-| Questions and approvals | `codex_requests`, `codex_respond`, `codex_review_request` |
-| Task controls | `codex_settings`, `codex_interrupt`, `codex_queue` |
-| Review and history | `codex_review`, `codex_diff`, `codex_fork`, `codex_compact` |
+| `inherit` (default) | Whatever your Codex configuration already uses |
+| `ask` | You. The request is shown as a prompt in your MCP client, or you review it in a terminal |
+| `approve_for_me` | Codex's built-in automatic reviewer. It can approve or deny; the sandbox stays on |
 
-[Full reference for all 32 tools →](docs/tools.md)
+The main agent can always *deny* a request, but it cannot *approve* one on your behalf unless you explicitly enable `approval_relay` in the [configuration](docs/configuration.md). If your client cannot show prompts, review the request in a terminal:
+
+```bash
+python3 server.py review REQUEST_ID
+```
+
+## Updating and uninstalling
+
+**Update:**
+
+```bash
+cd codex-mcp
+git pull
+python3 server.py stop
+```
+
+Then restart your MCP client. (Windows: `py -3 server.py stop`.) Always stop the broker after updating. Otherwise the client reports that a broker from a different version is still running.
+
+**Uninstall:**
+
+1. `python3 server.py stop`
+2. `claude mcp remove codex --scope user` (or remove the entry from your client's configuration)
+3. Delete the `codex-mcp` folder.
+4. Optionally delete the saved task history: `~/.local/state/codex-mcp` on macOS/Linux, `%LOCALAPPDATA%\CodexMCP` on Windows.
+
+## Troubleshooting
+
+| Problem | What to do |
+|---|---|
+| `Codex executable not found` | Make sure `codex --version` works in a new terminal, or set `codex_binary` to its full path in a [config file](docs/configuration.md). |
+| `codex` does not appear in `/mcp` | Check the path in your client's configuration and run the same command by hand, for example `python3 /path/to/server.py status`. |
+| A broker from a different version or configuration is running | Run `python3 server.py stop` (with the same `--config` if you use one), then retry. |
+| A task is stuck in `waiting` | It is waiting for an answer or approval. Ask the main agent to list pending requests, or run `server.py review REQUEST_ID`. |
+| Something else | See [docs/troubleshooting.md](docs/troubleshooting.md). The private log is `broker.log` in the state folder. |
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A[Main agent] <-->|MCP| B[Persistent local broker]
-    B <-->|app-server protocol| C[Codex CLI]
-    C --> D[Selected project]
-    C --> E[Native subagents]
+    A[Main agent<br/>e.g. Claude Code] <-->|MCP over stdio| B[server.py serve]
+    B <-->|private local socket / pipe| C[Background broker]
+    C <-->|app-server protocol| D[Codex CLI]
+    D --> E[Your project]
 ```
 
-The main agent starts work and polls `codex_events`. Questions and approvals come back with request IDs; replies return to the waiting Codex call. The broker keeps running if the client disconnects and stores events locally for later retrieval.
+The MCP server that your client starts is a thin adapter. A background *broker* owns the Codex connection, stores tasks and events in a private SQLite database, and keeps running when the client disconnects. A reconnecting client can catch up from where it left off. See [architecture](docs/architecture.md) and [security](docs/security.md).
 
-Each task is scoped to the directory selected by the main agent. Local communication uses private Windows named pipes or Unix sockets. Codex retains its native authentication, sandbox and account limits. See [architecture](docs/architecture.md) and the [security model](docs/security.md).
+## Documentation
 
-## Approvals
-
-Set `approval_mode` on `codex_start`, or change it with `codex_settings`:
-
-- `ask` — present requests for human review.
-- `approve_for_me` — let Codex's native reviewer evaluate eligible requests.
-- `inherit` — use the existing native reviewer setting; the default for new tasks.
-
-If the client cannot display a human prompt, review it in a terminal with `python server.py review REQUEST_ID`. Automatic review does not require enabling the separate `approval_relay` option.
-
-## Configuration and compatibility
-
-The default setup needs no config file. Optional [server settings](config.example.toml) cover the Codex executable, private state location and concurrency; projects are selected through tools. See [configuration](docs/configuration.md) for details.
-
-Native Windows, macOS and Linux adapters are included. Codex must have a working native sandbox on the chosen OS; the bridge does not substitute full access. This development session validated Linux. Platform-specific test coverage and remaining limits are recorded in [validation](docs/validation.md) and [platform notes](docs/platforms.md).
+| Guide | What it covers |
+|---|---|
+| [Installation details](docs/installation.md) | Other MCP clients, package install, Windows notes, running the broker manually |
+| [Usage guide](docs/usage.md) | The task workflow, approvals, subagents, plan mode, forks, queues, recovery |
+| [Tool reference](docs/tools.md) | All 32 tools, their arguments, task states and response formats |
+| [Configuration](docs/configuration.md) | Optional settings file |
+| [Troubleshooting](docs/troubleshooting.md) | Common errors and how to fix them |
+| [Security](docs/security.md) | Trust model, sandbox, approvals and stored data |
+| [Architecture](docs/architecture.md) | Components, message flow and delivery guarantees |
+| [Limitations](docs/limitations.md) | What is intentionally not supported, and workarounds |
+| [Development](docs/development.md) | Tests, CI, live checks and release packaging |
+| [Changelog](CHANGELOG.md) | Release notes |
 
 ## Development
 
 ```bash
-python -m unittest discover -v
+python3 -m unittest discover -v
 ```
 
-The offline suite uses a simulated Codex backend and consumes no model usage. The CI matrix targets Windows, macOS and Linux. See [CONTRIBUTING.md](CONTRIBUTING.md) for optional client and live checks.
-
-## Documentation
-
-- [Tool reference](docs/tools.md) and [workflow examples](examples/native-controls.md)
-- [Architecture and messaging](docs/architecture.md)
-- [Configuration](docs/configuration.md) and [troubleshooting](docs/troubleshooting.md)
-- [Terminal feature coverage](docs/terminal-parity.md) and [known limitations](docs/limitations.md)
-- [Security](docs/security.md) and [validation](docs/validation.md)
+The offline suite uses a simulated Codex process and uses no model quota. CI runs it on Windows, macOS and Linux with Python 3.11 and 3.14. See [docs/development.md](docs/development.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

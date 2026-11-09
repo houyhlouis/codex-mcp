@@ -43,6 +43,35 @@ def lock_file(fd):
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
+def unlock_file(fd):
+    """Release a lock taken by lock_file before closing its descriptor.
+
+    Windows may release a lock left on a closed handle only after a delay,
+    which could make a broker started immediately afterwards fail.
+    """
+    if IS_WINDOWS:
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def process_running(pid):
+    """Best-effort liveness check that never signals or terminates the process."""
+    if IS_WINDOWS:
+        from .windows import process_running as windows_process_running
+        return windows_process_running(pid)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def unix_peer_uid(sock):
     import socket
     import struct
@@ -75,9 +104,40 @@ def executable_argv(binary):
     return [sys.executable, binary] if Path(binary).suffix.lower() == ".py" else [binary]
 
 
+def find_on_path(name):
+    """Look up a command on PATH without implicitly searching the current directory.
+
+    shutil.which() on Windows always tries the current directory first, so a
+    project containing codex.exe/codex.cmd could shadow the installed CLI.
+    """
+    if not IS_WINDOWS:
+        return shutil.which(name)
+    suffixes = [""] if Path(name).suffix else [
+        ext.lower() for ext in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if ext]
+    key = next((k for k in os.environ if k.lower() == "path"), "PATH")
+    for directory in os.environ.get(key, "").split(os.pathsep):
+        directory = directory.strip().strip('"')
+        if not directory or not Path(directory).is_absolute():
+            continue
+        for suffix in suffixes:
+            candidate = Path(directory) / (name + suffix)
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def resolve_codex(binary):
     candidate = Path(binary).expanduser()
-    found = str(candidate) if candidate.is_file() else shutil.which(binary)
+    # A bare command name such as "codex" is looked up on PATH only. Treating
+    # it as a relative path would run a file named "codex" from the MCP
+    # client's working directory (often a project checkout) instead of the
+    # installed CLI.
+    explicit_path = (candidate.is_absolute() or binary.startswith("~") or os.sep in binary
+                     or bool(os.altsep and os.altsep in binary))
+    if explicit_path:
+        found = str(candidate) if candidate.is_file() else None
+    else:
+        found = find_on_path(binary)
     if not found:
         raise ValueError("Codex executable not found; install Codex or set codex_binary")
     path = Path(found).resolve()

@@ -1,8 +1,9 @@
 """Portable fixture installation for source ZIPs and Windows-created Git commits."""
 
-import shutil
 import json
+import shutil
 import sys
+import time
 from pathlib import Path
 
 from codex_local_mcp.security import private_dir
@@ -28,25 +29,25 @@ def write_config(path, state, binary=None):
     path.chmod(0o600)
 
 
-async def wait_for_broker_stop(config):
-    import asyncio
-    import os
-    from codex_local_mcp.platforms import lock_file
-    from codex_local_mcp.security import private_file
-    for _ in range(300):
-        fd = None
+async def stop_test_broker(config):
+    """Stop a test broker and wait until its process has exited.
+
+    Waiting only for the lock is not enough on Windows: the exiting broker
+    still holds broker.log open, so deleting the temporary directory fails.
+    """
+    from codex_local_mcp.broker import stop_broker
+    return await stop_broker(config, timeout=30)
+
+
+def read_fake_history(state):
+    """Read the fake Codex thread store while the fixture may be rewriting it."""
+    path = Path(state) / "fake-history.json"
+    for _ in range(200):
         try:
-            fd = private_file(config.state_dir / "broker.lock", os.O_RDWR)
-            lock_file(fd)
-            return
-        except FileNotFoundError:
-            return
-        except BlockingIOError:
-            await asyncio.sleep(0.05)
-        finally:
-            if fd is not None:
-                os.close(fd)
-    raise AssertionError("Broker did not release its lock after shutdown")
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            time.sleep(0.01)
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def link_or_skip(test, link, target, directory=None):

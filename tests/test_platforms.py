@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from codex_local_mcp.config import Config, load_config
 from codex_local_mcp.platforms import (IS_WINDOWS, canonical_system_path, executable_argv,
-    lock_file, resolve_codex, stdio_lines, unix_peer_uid)
+    find_on_path, lock_file, process_running, resolve_codex, stdio_lines, unix_peer_uid)
 from codex_local_mcp.security import BridgeError, private_dir, private_file, validate_windows_path
 from tests.helpers import install_fake_codex, write_config, temp_root
 from tests.test_service import ServiceHarness
@@ -98,6 +98,53 @@ class PlatformTest(unittest.IsolatedAsyncioTestCase):
                 native.unlink()
                 with self.assertRaisesRegex(ValueError, "native codex.exe"):
                     resolve_codex(str(shim))
+
+    async def test_bare_codex_name_never_runs_a_file_from_the_working_directory(self):
+        name = "codex.exe" if IS_WINDOWS else "codex"
+        with tempfile.TemporaryDirectory(dir=temp_root()) as directory:
+            root = Path(directory).resolve()
+            project, tools = root / "project", root / "bin"
+            project.mkdir()
+            tools.mkdir()
+            for folder in (project, tools):
+                (folder / name).write_text("#!/bin/sh\n")
+                (folder / name).chmod(0o700)
+            previous = os.getcwd()
+            os.chdir(project)
+            try:
+                with patch.dict(os.environ, {"PATH": str(tools)}):
+                    self.assertEqual(resolve_codex("codex"), str((tools / name).resolve()))
+                with patch.dict(os.environ, {"PATH": str(root / "missing")}):
+                    with self.assertRaisesRegex(ValueError, "not found"):
+                        resolve_codex("codex")
+                # An explicit relative path is still honoured.
+                self.assertEqual(resolve_codex("." + os.sep + name), str((project / name).resolve()))
+            finally:
+                os.chdir(previous)
+
+    async def test_windows_path_search_skips_the_working_directory(self):
+        with tempfile.TemporaryDirectory(dir=temp_root()) as directory:
+            root = Path(directory).resolve()
+            project, tools = root / "project", root / "bin"
+            project.mkdir()
+            tools.mkdir()
+            (project / "codex.exe").write_bytes(b"planted")
+            previous = os.getcwd()
+            os.chdir(project)
+            try:
+                with patch("codex_local_mcp.platforms.IS_WINDOWS", True), \
+                        patch.dict(os.environ, {"PATH": os.pathsep.join([".", str(tools)]), "PATHEXT": ".EXE;.CMD"}):
+                    self.assertIsNone(find_on_path("codex"))
+                    (tools / "codex.cmd").write_text("not executed")
+                    self.assertEqual(find_on_path("codex"), str(tools / "codex.cmd"))
+            finally:
+                os.chdir(previous)
+
+    async def test_process_running_reports_exit_without_signalling(self):
+        self.assertTrue(process_running(os.getpid()))
+        child = await asyncio.create_subprocess_exec(sys.executable, "-c", "pass")
+        await child.wait()
+        self.assertFalse(process_running(child.pid))
 
     async def test_windows_endpoint_is_private_and_account_specific(self):
         with patch("codex_local_mcp.config.IS_WINDOWS", True):

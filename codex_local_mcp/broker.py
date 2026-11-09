@@ -8,12 +8,14 @@ import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from .security import BridgeError, private_dir, private_file, redact
 from .service import Service
 from .store import Store
 from .tools import dispatch
-from .platforms import IS_WINDOWS, lock_file, detached_process_options, unix_peer_uid
+from .platforms import (IS_WINDOWS, lock_file, unlock_file, detached_process_options,
+                        process_running, unix_peer_uid)
 
 MAX_FRAME = 32 * 1024 * 1024
 
@@ -53,7 +55,9 @@ async def run_broker(config):
             if method == "ping":
                 result = {"pid": os.getpid(), "config": config.fingerprint}
             elif method == "stop":
-                result = {"stopping": True}
+                # The caller uses the PID to wait for the process to exit;
+                # Windows keeps broker.log locked until then.
+                result = {"stopping": True, "pid": os.getpid()}
                 stopping.set()
             elif method == "review":
                 # The local CLI and MCP elicitation adapter use this route after
@@ -80,11 +84,16 @@ async def run_broker(config):
             result = await handle_payload(raw)
             writer.write(result + b"\n")
             await writer.drain()
-        except (ConnectionError, BrokenPipeError, TimeoutError, ValueError):
+        except (BridgeError, OSError, TimeoutError, ValueError):
+            # Rejected peers, oversized frames and vanished clients only end
+            # this connection; they must not log unhandled-task tracebacks.
             pass
         finally:
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
 
     server = None
     try:
@@ -119,7 +128,7 @@ async def run_broker(config):
         store.close()
         if server and not IS_WINDOWS:
             config.socket.unlink(missing_ok=True)
-        os.close(lock)
+        release_lock(lock)
 
 
 async def rpc(config, method, *, name=None, args=None, timeout=90):
@@ -152,26 +161,85 @@ async def rpc(config, method, *, name=None, args=None, timeout=90):
         await writer.wait_closed()
 
 
+def release_lock(fd):
+    try:
+        unlock_file(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def broker_lock_free(config):
+    """True when no broker holds the state directory's lock."""
+    try:
+        fd = private_file(config.state_dir / "broker.lock", os.O_RDWR)
+    except (FileNotFoundError, BridgeError):
+        return True
+    try:
+        try:
+            lock_file(fd)
+        except (BlockingIOError, PermissionError):
+            return False
+        unlock_file(fd)
+        return True
+    finally:
+        os.close(fd)
+
+
+async def stop_broker(config, timeout=15):
+    """Stop the broker and wait until it has actually shut down.
+
+    The broker releases its lock at the end of shutdown, but the process can
+    live a little longer. On Windows its open files (for example broker.log)
+    cannot be deleted or replaced until it exits, so wait for the process too.
+    """
+    try:
+        result = await rpc(config, "stop")
+    except (FileNotFoundError, ConnectionRefusedError):
+        return {"stopping": False, "message": "Broker is not running"}
+    pid = result.get("pid")
+    deadline = time.monotonic() + timeout
+    while not broker_lock_free(config) or (IS_WINDOWS and pid and process_running(pid)):
+        if time.monotonic() >= deadline:
+            raise BridgeError("Broker accepted the stop request but is still shutting down; try again shortly")
+        await asyncio.sleep(0.05)
+    return {"stopped": True, "pid": pid}
+
+
+async def ping_existing(config):
+    try:
+        return await rpc(config, "ping", timeout=2)
+    except BridgeError as exc:
+        if "Configuration differs" in str(exc):
+            raise BridgeError("A broker started by a different version or configuration is still running for this "
+                              "state directory. Stop it with `python server.py stop` (add the same --config option "
+                              "if you use one), then retry") from exc
+        raise
+
+
 async def ensure_broker(config):
     private_dir(config.state_dir)
     try:
-        return await rpc(config, "ping", timeout=2)
+        return await ping_existing(config)
     except (FileNotFoundError, ConnectionRefusedError):
         pass
     # A separate startup lock avoids two clients spawning competing daemons.
     fd = private_file(config.state_dir / "startup.lock", os.O_CREAT | os.O_RDWR)
+    locked = False
     try:
         deadline = time.monotonic() + 15
         while True:
             try:
                 lock_file(fd)
+                locked = True
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
                     raise BridgeError("Timed out waiting for broker startup")
                 await asyncio.sleep(0.1)
         try:
-            return await rpc(config, "ping", timeout=2)
+            return await ping_existing(config)
         except (FileNotFoundError, ConnectionRefusedError):
             pass
         log = private_file(config.state_dir / "broker.log", os.O_CREAT | os.O_WRONLY | os.O_APPEND)
@@ -181,7 +249,7 @@ async def ensure_broker(config):
                 command.extend(["--config", str(config.path)])
             command.append("broker")
             child = subprocess.Popen(command,
-                cwd=str(__import__("pathlib").Path(__file__).resolve().parent.parent),
+                cwd=str(Path(__file__).resolve().parent.parent),
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log,
                 close_fds=True, **detached_process_options())
         finally:
@@ -199,4 +267,7 @@ async def ensure_broker(config):
                 await asyncio.sleep(0.1)
         raise BridgeError("Broker did not become ready; inspect the private broker.log")
     finally:
-        os.close(fd)
+        if locked:
+            release_lock(fd)
+        else:
+            os.close(fd)

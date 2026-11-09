@@ -1,151 +1,197 @@
-# MCP tool reference
+# Tool reference
 
-English | [简体中文](tools.zh-CN.md)
+[Back to README](../README.md) · [Usage guide](usage.md)
 
-All tool arguments are JSON objects. Unknown fields are rejected. Responses have JSON in a text content block and, on MCP 2025-06-18 or later, matching `structuredContent`. Operational errors use `isError: true`; malformed tool arguments produce JSON-RPC `-32602`.
+The server exposes 32 tools. All arguments are JSON objects, and unknown fields are rejected. Results are returned as JSON text. On MCP 2025-06-18 and newer they are also returned as `structuredContent`. Operational errors return `isError: true`; malformed arguments return JSON-RPC error `-32602`.
 
-The server exposes no arbitrary shell, filesystem-read, configuration-write, login/logout, token, or raw app-server RPC tool.
+There is deliberately no tool for arbitrary shell commands, file reads, configuration changes, login/logout, tokens or raw Codex protocol calls.
 
-## Tool list
+- [Two kinds of `request_id`](#two-kinds-of-request_id)
+- [Projects, status and models](#projects-status-and-models)
+- [Tasks](#tasks)
+- [Progress and history](#progress-and-history)
+- [Questions and approvals](#questions-and-approvals)
+- [Settings and subagents](#settings-and-subagents)
+- [Conversation controls](#conversation-controls)
+- [Rich input](#rich-input)
+- [Task states](#task-states)
+- [Response formats for `codex_respond`](#response-formats-for-codex_respond)
+- [Limits](#limits)
+- [Calling tools from the command line](#calling-tools-from-the-command-line)
 
-| Tool | Required arguments | Optional arguments and defaults | Result/use |
-|---|---|---|---|
-| `codex_status` | None | None | CLI version, backend, sign-in type, pending requests, journal high water; starts Codex if needed |
-| `codex_projects` | None for list; absolute `path` for select/create | `action: list`, `path`, `offset: 0`, `limit: 100` | Previously selected projects, or a newly selected/created project descriptor |
-| `codex_models` | None | `cursor`, `limit: 100` | Live catalog page: model IDs, supported/default reasoning efforts, `nextCursor` |
-| `codex_start` | `prompt`, `request_id`; exactly one of `workdir` or `project_id` | `model`, `effort`, `access: write`, `approval_mode: inherit`, `collaboration_mode: default`, `service_tier`, `name`, rich inputs below | New persistent task and first turn acknowledgement |
-| `codex_list` | None | `offset: 0`, `limit: 50` | Newest-first task snapshots and `next_offset` |
-| `codex_get` | `task_id` | None | Current state, latest summary, files, commands, plan, usage, requests |
-| `codex_events` | None | `task_id`, `after: 0`, `limit: 100`, `wait_seconds: 0`, `include_descendants: true` | Durable events, next `cursor`, `has_more`, current pending requests |
-| `codex_send` | `task_id`, `prompt`, `request_id` | `mode: follow_up`, `expected_turn_id`, `model`, `effort`, rich inputs below | Follow-up turn or active steering acknowledgement |
-| `codex_resume` | `task_id`, `request_id` | None | Load saved conversation and reconcile recent turn state; no prompt replay |
-| `codex_interrupt` | `task_id`, `expected_turn_id`, `request_id` | None | Interrupt acknowledgement; poll until the turn actually ends |
-| `codex_history` | `task_id` | `kind: turns`, `cursor`, `limit: 50`, `turn_id` | Codex history page with `nextCursor`; `kind` can be `turns` or `items` |
-| `codex_requests` | None | `task_id` | Pending questions/approvals; ignores resolved and expired requests |
-| `codex_respond` | `request_id`, `response` | None | Send a validated response to a live pending request |
-| `codex_review_request` | `request_id` | None | Use client human elicitation, or return a pending/local-review fallback |
-| `codex_capabilities` | `task_id` | None | Native collaboration modes, permission-profile catalog and direct-input capability |
-| `codex_settings` | `task_id`; `request_id` for changes | `scope: get` (`get/next/current`), `expected_turn_id`, `model`, `effort`, `approval_mode`, `collaboration_mode`, `service_tier`, `access` | Inspect/update scoped settings; current-turn settings do not change future turns |
-| `codex_subagents` | `task_id` | `refresh: true`, `cursor`, `limit: 50`, `archived: false` | Discover, verify and subscribe to native descendants; return child task IDs |
-| `codex_delegate` | `task_id`, `prompt`, `request_id` | `expected_turn_id` for an active parent | Ask the parent to spawn or control native subagents |
-| `codex_fork` | `task_id`, `request_id` | `name`, `last_turn_id` | Fork native history without starting work or continuing a goal |
-| `codex_rename` | `task_id`, `name`, `request_id` | None | Rename the native conversation |
-| `codex_archive` | `task_id`, `request_id` | `action: archive` (`archive/unarchive`) | Archive/restore an idle family |
-| `codex_delete` | `task_id`, `confirm_thread_id`, `request_id` | None | Delete native history and descendants; require exact native ID; retain bridge audit |
-| `codex_compact` | `task_id`, `request_id` | None | Start native compaction; poll events; may consume usage |
-| `codex_revert` | `task_id`, `before_turn_id`, `confirm_history_only: true`, `request_id` | None | Remove that turn and later native history; does not undo files |
-| `codex_queue` | `task_id`; `request_id` for mutations | `action: list` (`list/add/update/delete/reorder/start`), `prompt`, `queued_id`, `ordered_ids`, `cursor`, `limit: 50`, images/context files/skills | Manage native queued submissions; add can trigger immediate execution |
-| `codex_review` | `task_id`, `request_id` | `target: uncommittedChanges` (`uncommittedChanges/baseBranch/commit/custom`), `branch`, `commit`, `instructions` | Start an inline native code-review turn |
-| `codex_terminals` | `task_id`; `request_id` for mutations | `action: list` (`list/terminate/clean`), `process_id`, `cursor`, `limit: 50` | List/stop owned background processes, not arbitrary shell execution |
-| `codex_goal` | `task_id`; `request_id` and `user_requested: true` for mutations | `action: get` (`get/set/clear`), `objective`, `status`, `token_budget` | Native persistent goal; no implicit budget or inferred user intent |
-| `codex_skills` | `task_id` | `force_reload: false` | Available native skill metadata; select enabled unique names in input |
-| `codex_diff` | `task_id` | None | Latest Codex turn diff and file list, not a separate Git audit |
-| `codex_usage` | None | None | Native account rate-limit/allowance information; no billing changes |
-| `codex_sessions` | `workdir` or `project_id`; `thread_id`, `confirm_stopped: true`, `request_id` for import | `action: list` (`list/import`), `cursor`, `limit: 50`, `archived: false` | Discover/import native root conversations at the exact approved project cwd |
+## Two kinds of `request_id`
 
-All 32 tools use the same closed dispatch allowlist. Mutation actions on multi-action tools require an operation key even when the schema also permits a read-only action without one.
-
-`approval_mode` accepts `inherit`, `ask`, or `approve_for_me` on start; settings changes select `ask` or `approve_for_me`. These map to native `user`/`auto_review` reviewers. The automatic reviewer can approve or deny; its published review events and latest result are retained. It does not imply unrestricted access. `collaboration_mode` is `default` or `plan`. Service tiers must be offered by the chosen model; `default` resets a settings tier. Access remains limited to `read` or `write` within the same project. Current-turn changes require `expected_turn_id` and cannot change access or collaboration mode.
-
-Rich inputs on start/send: `images` (up to 10 relative project paths), `context_files` (up to 20 UTF-8 files), `skills` (up to 10 enabled unique catalog names), and `output_schema` (native structured final-output schema, new turns only). Text files are limited to 256 KiB each and 512 KiB combined. Images are limited to 20 MiB each. Files are opened without following symlink components; images are copied into private broker state before native ingestion so a project process cannot race the path. These image snapshots are retained with state. Queue add/update supports rich inputs except final-output schemas.
-
-Limits are 1–200 records per page, 0–25 seconds per poll, and 100,000 characters per prompt. Event pages also have a roughly 1 MiB budget; a single larger event is returned intact. The Codex frame ceiling is 16 MiB and the broker response ceiling is 32 MiB. Exceeding these limits stops the affected connection rather than silently discarding part of a frame.
-
-Use exact model/effort pairs from `codex_models`. A model listed in a catalog can still be unavailable to the account for a particular inference request; report that failure to the user. Changing models is supported on a new follow-up turn, not during a steer.
-
-Projects are selected or created by the main agent, with no workspace configuration. Pass an absolute workdir or a returned project_id. Projects are explicit per task. `codex_projects(action="select")` does not establish a process-global current project. Creation makes ordinary directories; it does not clone repositories, initialize Git, create worktrees, or install dependencies.
-
-## Task and turn semantics
-
-A task ID is a bridge-owned persistent conversation. `thread_id` identifies the corresponding native Codex conversation. Each initial/follow-up instruction starts a new turn in that conversation.
-
-`family_status` is `active` while this task or a known descendant is active/queued/recovering, otherwise `idle`. A completed parent turn does not necessarily mean all child work finished; inspect the child statuses and pending requests.
-
-| State | Meaning |
+| Where | Meaning |
 |---|---|
-| `starting` | A control operation is being acknowledged |
-| `queued` | Pending native work reserves this task's project family |
+| Tools that change something (`codex_start`, `codex_send`, `codex_fork`, …) | An **operation key** that you choose. Repeating a call with the same key and identical arguments returns the saved result instead of doing the work twice. The same key with different arguments is rejected. If the first attempt failed or its outcome is uncertain, the key stays blocked; inspect the task, then use a new key. |
+| `codex_respond`, `codex_review_request` | The **pending request ID** that the server returned for a question or approval. |
+
+Multi-action tools (`codex_settings`, `codex_queue`, `codex_terminals`, `codex_goal`, `codex_sessions`) need an operation key only for actions that change something.
+
+## Projects, status and models
+
+| Tool | Required | Optional (default) | Returns |
+|---|---|---|---|
+| `codex_status` | none | none | Codex version, sign-in type (no credentials), pending requests, event cursor. Starts Codex if needed |
+| `codex_projects` | `path` for `select`/`create` | `action` (`list`), `offset` (0), `limit` (100) | Previously selected projects, or the selected/created project with its `project_id` |
+| `codex_models` | none | `cursor`, `limit` (100) | Model catalog page: model IDs, supported and default reasoning efforts, service tiers, `nextCursor` |
+| `codex_usage` | none | none | Account rate limits and remaining allowance. Read-only |
+| `codex_capabilities` | `task_id` | none | Collaboration modes, permission profiles and direct-input capability for a task |
+| `codex_skills` | `task_id` | `force_reload` (false) | Skills available in the task's project |
+
+`codex_projects` with `create` makes an ordinary directory. It does not clone repositories, run `git init`, create worktrees or install dependencies. A model listed in the catalog may still be unavailable to your account; such a failure is reported by the turn.
+
+## Tasks
+
+| Tool | Required | Optional (default) | What it does |
+|---|---|---|---|
+| `codex_start` | `prompt`, `request_id`, and exactly one of `workdir` or `project_id` | `model`, `effort`, `access` (`write`), `approval_mode` (`inherit`), `collaboration_mode` (`default`), `service_tier`, `name`, [rich input](#rich-input) | Creates a persistent conversation and starts the first turn. Returns immediately |
+| `codex_send` | `task_id`, `prompt`, `request_id` | `mode` (`follow_up`), `expected_turn_id`, `model`, `effort`, [rich input](#rich-input) | Starts a follow-up turn, or with `mode: "steer"` adds input to the running turn |
+| `codex_interrupt` | `task_id`, `expected_turn_id`, `request_id` | none | Asks Codex to stop the turn. Poll until the status is `interrupted` |
+| `codex_resume` | `task_id`, `request_id` | none | Reloads a saved conversation after a restart. Never replays a prompt |
+| `codex_list` | none | `offset` (0), `limit` (50) | Tasks, newest first |
+| `codex_get` | `task_id` | none | Status, latest summary, changed files, last 100 commands with exit codes, plan, usage, pending requests, subagents |
+
+`summary` is the latest message written by Codex and can be an interim message while work is running. A command's exit code 0 does not by itself prove that all requested tests passed; read the output and the final report.
+
+## Progress and history
+
+| Tool | Required | Optional (default) | Returns |
+|---|---|---|---|
+| `codex_events` | none | `task_id`, `after` (0), `limit` (100), `wait_seconds` (0, max 25), `include_descendants` (true) | Journal events after the cursor, the next `cursor`, `has_more`, and the current pending requests |
+| `codex_history` | `task_id` | `kind` (`turns` or `items`), `cursor`, `limit` (50), `turn_id` | Codex's own persisted history, for recovery after an outage |
+| `codex_diff` | `task_id` | none | The latest turn diff and file list reported by Codex (not an independent Git diff) |
+
+How to use event cursors:
+
+- `after` is exclusive. Process a page before saving its `cursor`. Fetch again immediately while `has_more` is true.
+- A cursor from a task-filtered call is not valid for unfiltered calls, and vice versa.
+- Events include Codex's messages, completed items, command output, file changes, plans, usage, automatic-review results and `bridge/*` lifecycle events. Raw private reasoning is never included.
+- Pending requests are part of every page, so missed notifications cannot hide them.
+
+## Questions and approvals
+
+| Tool | Required | What it does |
+|---|---|---|
+| `codex_requests` | none (optional `task_id`) | Lists pending questions and approvals, including those from subagents |
+| `codex_respond` | `request_id`, `response` | Sends a validated answer. See [response formats](#response-formats-for-codex_respond) |
+| `codex_review_request` | `request_id` | Shows the request to the human through the client's form prompt. Without prompt support, it returns `status: "pending"` and the request must be reviewed in a terminal |
+
+Positive approvals need the human prompt, the terminal (`server.py review REQUEST_ID`) or the operator setting `approval_relay = true`. Denials and answers to `parent_question` can always be sent by the main agent.
+
+## Settings and subagents
+
+| Tool | Required | Optional (default) | What it does |
+|---|---|---|---|
+| `codex_settings` | `task_id`; `request_id` for changes | `scope` (`get`, `next`, `current`), `expected_turn_id`, `model`, `effort`, `approval_mode` (`ask`/`approve_for_me`), `collaboration_mode` (`default`/`plan`), `service_tier`, `access` (`read`/`write`) | Reads or changes settings. `current` applies to the running turn only and cannot change access or collaboration mode |
+| `codex_delegate` | `task_id`, `prompt`, `request_id` | `expected_turn_id` (required if the parent is running) | Asks the parent to spawn or control its native subagents |
+| `codex_subagents` | `task_id` | `cursor`, `limit` (50), `refresh` (true), `archived` (false) | Discovers and verifies native descendants and returns their task IDs |
+
+`approval_mode` values: `inherit` (start only; keep Codex's configured reviewer), `ask` (human reviewer), `approve_for_me` (Codex's automatic reviewer `auto_review`). Service tiers must be offered by the chosen model; `default` clears a tier.
+
+## Conversation controls
+
+All of these need `task_id` and `request_id`. Most require the task family to be idle.
+
+| Tool | Extra arguments | What it does |
+|---|---|---|
+| `codex_review` | `target` (`uncommittedChanges`, `baseBranch` + `branch`, `commit` + `commit`, `custom` + `instructions`) | Starts a native code-review turn |
+| `codex_fork` | `name`, `last_turn_id` (optional) | Copies the conversation history into a new task. Does not start work |
+| `codex_rename` | `name` | Renames the conversation |
+| `codex_archive` | `action` (`archive` or `unarchive`) | Archives or restores the conversation and its subagents |
+| `codex_delete` | `confirm_thread_id` (must equal the task's `thread_id`) | Permanently deletes the native conversation and subagents. The bridge's audit records remain |
+| `codex_compact` | none | Compacts the conversation history. May use model quota |
+| `codex_revert` | `before_turn_id`, `confirm_history_only: true` | Removes that turn and all later turns from the conversation. **Does not revert files** |
+| `codex_queue` | `action` (`list`, `add`, `update`, `delete`, `reorder`, `start`), `prompt`, `queued_id`, `ordered_ids`, `cursor`, `limit`, rich input | Manages queued instructions. `list` needs no `request_id`. An idle task may consume an added entry immediately |
+| `codex_terminals` | `action` (`list`, `terminate`, `clean`), `process_id`, `cursor`, `limit` | Lists or stops the task's background processes. `list` needs no `request_id` |
+| `codex_goal` | `action` (`get`, `set`, `clear`), `objective`, `status`, `token_budget`, `user_requested` | Native persistent goal. Changes require `user_requested: true` and must come from an explicit user request |
+| `codex_sessions` | `workdir` or `project_id`; `action` (`list`, `import`), `thread_id`, `confirm_stopped`, `cursor`, `limit`, `archived` | Lists or imports existing Codex CLI conversations from exactly this project. Import requires `confirm_stopped: true` |
+
+## Rich input
+
+Accepted by `codex_start`, `codex_send` and `codex_queue` (`add`/`update`):
+
+| Field | Limits |
+|---|---|
+| `context_files` | Up to 20 UTF-8 files relative to the project; 256 KiB each, 512 KiB in total |
+| `images` | Up to 10 PNG/JPEG/WebP/GIF files relative to the project; 20 MiB each. Copied to private storage before Codex reads them |
+| `skills` | Up to 10 enabled skill names from `codex_skills` |
+| `output_schema` | JSON Schema for the final answer (start/send only) |
+
+Paths must stay inside the project. Symbolic links are refused.
+
+## Task states
+
+| Status | Meaning |
+|---|---|
+| `starting` | An action is waiting for Codex's acknowledgement |
+| `queued` | A queued instruction is waiting to run |
 | `running` | A turn is active |
-| `waiting` | A Codex request awaits a response |
-| `interrupting` | Interrupt was acknowledged; completion is still pending |
-| `completed` | The latest turn completed successfully |
-| `failed` | Task creation or the latest turn failed; inspect error/events |
-| `interrupted` | Codex confirmed interruption |
-| `needs_resume` | Broker/backend lost its live connection; saved history remains available |
-| `uncertain` | A control acknowledgement was lost; do not repeat work blindly |
-| `idle` | A saved conversation has been loaded and has no confirmed active turn |
-| `archived` | Restore before continuing this conversation |
-| `deleted` | Native history was deleted; bridge audit records remain |
+| `waiting` | A question or approval needs an answer |
+| `interrupting` | Interrupt requested; waiting for confirmation |
+| `completed` | The latest turn finished successfully |
+| `failed` | Task creation or the latest turn failed; see `error` and events |
+| `interrupted` | Codex confirmed the interruption |
+| `needs_resume` | The connection to Codex was lost; call `codex_resume` |
+| `uncertain` | An acknowledgement was lost; inspect before retrying |
+| `idle` | Loaded, with no active turn |
+| `archived` | Restore with `codex_archive` before continuing |
+| `deleted` | Native history was deleted; audit records remain |
 
-An idle resumed task can include `recovered_turn_status` describing its latest persisted turn. Inspect `codex_history` for authoritative recovered items. Resumption does not restart an interrupted command or reproduce all lost stream deltas.
+`family_status` is `active` while the task or any known subagent is active, queued or awaiting recovery.
 
-Only one independent active task family may use a given project or overlapping directory. Verified native descendants may collaborate within that family. The configured concurrent-task limit counts active root families; native Codex separately controls its internal agent concurrency. Separate worktrees in sibling directories can be selected as independent projects. The bridge does not manage Git worktree lifecycle.
+## Response formats for `codex_respond`
 
-`summary` is the latest agent-authored message, which can be interim while work is active. `files` are paths reported by file-change items. `commands` keeps the latest 100 command records with exit codes; complete records and output remain in events/history. A successful shell command does not, by itself, prove every requested test passed. Read its output and the final agent report.
-
-## Replay and retry
-
-`after` is an exclusive, monotonically increasing journal sequence. It is not a timestamp or Codex thread cursor. Process a page before advancing to its returned `cursor`. If `has_more` is true, fetch the next page immediately. Do not reuse a filtered task cursor as an unfiltered stream cursor.
-
-The event stream includes agent text deltas, completed items, command output, changes, plans, usage, automatic-review results and bridge lifecycle events. Parent polling includes verified descendants by default; each record retains its originating `task_id`. Raw private reasoning content is excluded; available reasoning summaries can be included. `bridge/request` carries a stable pending-request ID plus parent/root task IDs. The same requests also appear in polling results, so notification loss cannot hide them.
-
-`request_id` in start/send/resume/interrupt and the new control mutations is an **operation idempotency key**. A repeated identical call returns its saved acknowledgement; that snapshot can be older than `codex_get`. Reusing a key with different arguments fails. If delivery was uncertain, the key remains uncertain and will not cause a replay.
-
-`request_id` in respond/review is instead a **pending Codex request ID** returned by this server. Resolved, expired, interrupted and old-process requests cannot be answered. Responses are not automatically resent after transport failure.
-
-## Response shapes
-
-For `parent_question`, the main agent can provide task context without a human approval:
+**`parent_question`**
 
 ```json
-{"request_id":"PENDING_ID","response":{"text":"Use the existing parser interface and run its unit tests."}}
+{"request_id": "PENDING_ID", "response": {"text": "Use the existing parser interface."}}
 ```
 
-For `command_approval` and `file_approval`, send one offered decision:
+**`command_approval` and `file_approval`.** One of `accept`, `decline` or `cancel`, and only if Codex offered it in `availableDecisions`. If `decline` is not offered, use `cancel` to deny (this may interrupt the turn). Session-wide approvals and rule changes are not supported. File approvals are refused if the patch would touch anything outside the project.
 
 ```json
-{"request_id":"PENDING_ID","response":{"decision":"accept"}}
+{"request_id": "PENDING_ID", "response": {"decision": "accept"}}
 ```
 
-Supported decisions are `accept`, `decline`, and `cancel`, subject to Codex's `availableDecisions`. Some commands offer `accept` and `cancel` but **not** `decline`. In that case use `cancel` to deny; it may interrupt the turn. `acceptForSession`, policy amendments and persistent network-rule changes are rejected. File approvals include the proposed patch when supplied by Codex and must stay inside the task project.
-
-For built-in `user_input`, answer all question IDs:
+**`user_input`.** Answer every question ID. Questions marked secret are refused; use Codex's own sign-in flow for credentials.
 
 ```json
-{
-  "request_id":"PENDING_ID",
-  "response":{"answers":{"choice":{"answers":["Use the current schema."]}}}
-}
+{"request_id": "PENDING_ID", "response": {"answers": {"choice": {"answers": ["Use the current schema."]}}}}
 ```
 
-For `permissions`, grant only a subset of what was requested, for this turn:
+**`permissions`.** Grant a subset of what was requested, for this turn only. `{}` grants nothing. Filesystem paths must be inside the project (relative paths are relative to the project); glob and special paths are refused.
 
 ```json
-{
-  "request_id":"PENDING_ID",
-  "response":{"permissions":{"network":{"enabled":true}},"scope":"turn"}
-}
+{"request_id": "PENDING_ID", "response": {"permissions": {"network": {"enabled": true}}, "scope": "turn"}}
 ```
 
-An empty `permissions` object grants nothing. Filesystem grants must be concrete paths within the task's project. Special-path/glob grants and session grants are rejected. The bridge validates that grants do not introduce permissions absent from the request.
-
-For external MCP `elicitation` requests, supported simple forms use:
+**`elicitation`** (forms from external MCP tools):
 
 ```json
-{"request_id":"PENDING_ID","response":{"action":"accept","content":{"choice":"yes"}}}
+{"request_id": "PENDING_ID", "response": {"action": "accept", "content": {"choice": "yes"}}}
 ```
 
-`decline`/`cancel` sends `content: null`. URL-mode requests can relay completion using `action: "accept", content: null` only after the user completes the provider's flow. The bridge does not visit the URL or fetch tokens. Advanced schemas fail closed; secret fields must use native/provider authentication rather than MCP arguments.
+`decline` and `cancel` send no content. For URL-mode requests, send `accept` with `content: null` only after the user has completed the provider's page. Forms with advanced schemas or secret fields are refused and must be handled in Codex directly.
 
-Except for parent questions and denials, these responses require either `codex_review_request`'s human UI, interactive terminal review, or the operator's explicit `approval_relay = true` configuration. The `response` object is method-specific data, never an arbitrary app-server method.
+## Limits
 
-## CLI tool calls
+| Limit | Value |
+|---|---|
+| Prompt length | 100,000 characters |
+| Page size | 1–200 records |
+| Poll wait | 0–25 seconds |
+| Event page size | about 1 MiB (a single larger event is still returned whole) |
+| MCP input frame | 1 MiB |
+| Codex frame / broker response | 16 MiB / 32 MiB |
+| Concurrent independent task families | `max_tasks` (default 4) |
 
-The diagnostic CLI uses the identical allowlist and validation. Run from the source root:
+## Calling tools from the command line
+
+The CLI uses the same validation and allowlist. This is useful for diagnosis:
 
 ```bash
-python3 server.py --config /absolute/config.toml \
-  call codex_events --args '{"task_id":"TASK_ID","after":0,"wait_seconds":25}'
+python3 server.py call codex_events --args '{"task_id": "TASK", "after": 0, "wait_seconds": 25}'
 ```
 
-`--args -` reads JSON from stdin, avoiding arguments in the process list. Do not transmit credentials through task prompts or answers.
+`--args -` reads the JSON from stdin, which keeps it out of the process list.

@@ -16,7 +16,7 @@ PREFIX = "codex-mcp/"
 MANIFEST = "SOURCE-MANIFEST.json"
 ROOT_FILES = {
     ".editorconfig", ".gitattributes", ".gitignore", "README.md", "README.zh-CN.md",
-    "CONTRIBUTING.md", "SECURITY.md", "pyproject.toml",
+    "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "pyproject.toml",
     "config.example.toml", "server.py", "NOTICE",
 }
 TREES = {"codex_local_mcp", "docs", "examples", "scripts", "tests", ".github"}
@@ -150,9 +150,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--output", type=Path, help="ZIP destination; defaults to dist/codex-mcp-VERSION-source.zip")
-    group.add_argument("--verify", type=Path, help="Verify an existing ZIP and its embedded source manifest")
+    group.add_argument("--verify", type=Path, nargs="?", const=True, metavar="ZIP",
+                       help="Verify a ZIP and its embedded source manifest; defaults to dist/codex-mcp-VERSION-source.zip")
     args = parser.parse_args()
     if args.verify:
+        if args.verify is True:
+            version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+            args.verify = ROOT / "dist" / f"codex-mcp-{version}-source.zip"
         result = verify_archive(args.verify)
         print(f"Verified {result['source_files']} source files (version {result['version']})")
         print(f"SHA256 {result['sha256']}")

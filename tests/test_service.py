@@ -315,6 +315,55 @@ class ServiceTest(ServiceHarness):
             await self.start_task("hold")
         self.assertEqual(len(self.store.all("tasks")), 1)
 
+    async def test_documented_denial_shapes_need_no_human_channel(self):
+        # The tool reference shows grants with "scope": "turn"; an empty grant
+        # in that shape is still a denial and must not require human review.
+        task = await self.start_task("permission")
+        req = (await self.until(task["id"]))["pending_requests"][0]
+        with self.assertRaisesRegex(BridgeError, "Human review"):
+            await self.service.respond(req["id"], {"permissions": {"network": {"enabled": True}}, "scope": "turn"})
+        await self.service.respond(req["id"], {"permissions": {}, "scope": "turn"})
+        self.assertEqual((await self.until(task["id"]))["status"], "completed")
+        hold = await self.start_task("hold", path="b", key="hold")
+        await self.service.on_message({"id": 9997, "method": "mcpServer/elicitation/request", "params": {
+            "threadId": hold["thread_id"], "turnId": hold["turn_id"], "mode": "form",
+            "message": "Connect?", "requestedSchema": {"type": "object", "properties": {}}}})
+        req = self.service.requests(hold["id"])[0]
+        await self.service.respond(req["id"], {"action": "decline", "content": None})
+        self.assertEqual(self.store.get("requests", req["id"])["status"], "answered")
+
+    async def test_relative_permission_paths_resolve_inside_the_project(self):
+        task = await self.start_task("hold")
+        requested = {"fileSystem": {"write": ["build", "../escape"]}}
+        await self.service.on_message({"id": 9996, "method": "item/permissions/requestApproval", "params": {
+            "threadId": task["thread_id"], "turnId": task["turn_id"], "itemId": "p", "permissions": requested}})
+        req = self.service.requests(task["id"])[0]
+        with self.assertRaisesRegex(BridgeError, "within this task's project"):
+            await self.service.respond(req["id"], {"permissions": {"fileSystem": {"write": ["../escape"]}}}, human=True)
+        # Relative to the project, not to the broker's working directory.
+        result = await self.service.respond(req["id"], {"permissions": {"fileSystem": {"write": ["build"]}}}, human=True)
+        self.assertEqual(result["status"], "sent")
+
+    async def test_failed_operation_key_reports_the_original_error(self):
+        self.service.projects("create", str(self.root / "a"))
+        args = {"workdir": str(self.root / "a"), "prompt": "echo", "request_id": "bad-model", "model": "invented"}
+        with self.assertRaisesRegex(BridgeError, "visible Codex catalog"):
+            await dispatch(self.service, "codex_start", args)
+        with self.assertRaisesRegex(BridgeError, "uncertain.*visible Codex catalog.*codex_list"):
+            await dispatch(self.service, "codex_start", args)
+
+    async def test_default_service_tier_is_not_sent_as_a_tier_id(self):
+        self.service.projects("create", str(self.root / "a"))
+        task = await dispatch(self.service, "codex_start", {"workdir": str(self.root / "a"), "prompt": "echo",
+            "request_id": "tier", "service_tier": "default"})
+        self.assertIsNone(task["service_tier"])
+        await self.until(task["id"])
+        changed = await self.service.settings(task["id"], "next", service_tier="priority")
+        self.assertEqual(changed["service_tier"], "priority")
+        changed = await self.service.settings(task["id"], "next", service_tier="default")
+        self.assertIsNone(changed["service_tier"])
+        self.assertNotIn("serviceTier", self.service.turn_options(self.service.task(task["id"])))
+
     async def test_large_events_paginate_by_bytes_without_loss(self):
         with self.store.db:
             for i in range(4):

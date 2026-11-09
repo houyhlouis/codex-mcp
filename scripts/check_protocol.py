@@ -15,7 +15,7 @@ import jsonschema
 
 def main(binary):
     samples = {
-        "InitializeParams": {"clientInfo": {"name": "codex_local_mcp", "title": "Codex Local MCP", "version": "0.1.0"}, "capabilities": {"experimentalApi": True}},
+        "InitializeParams": {"clientInfo": {"name": "codex_local_mcp", "title": "Codex Local MCP", "version": "0.1.1"}, "capabilities": {"experimentalApi": True}},
         "ThreadStartParams": {"cwd": "/tmp/project", "permissions": "local_mcp_write_test", "runtimeWorkspaceRoots": ["/tmp/project"],
             "approvalPolicy": "on-request", "model": "catalog-model", "ephemeral": False,
             "dynamicTools": [{"type": "function", "name": "ask_parent", "description": "Ask parent", "inputSchema": {"type": "object"}}]},

@@ -12,8 +12,8 @@ from pathlib import Path
 
 from codex_local_mcp.broker import rpc
 from codex_local_mcp.config import load_config
-from tests.helpers import install_fake_codex, write_config, wait_for_broker_stop, temp_root
-from codex_local_mcp.platforms import IS_WINDOWS
+from tests.helpers import install_fake_codex, write_config, stop_test_broker, temp_root
+from codex_local_mcp.platforms import IS_WINDOWS, process_running
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -99,11 +99,7 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
         for client in self.clients:
             if client.process.returncode is None:
                 await client.close()
-        try:
-            await rpc(self.config, "stop")
-            await wait_for_broker_stop(self.config)
-        except (FileNotFoundError, ConnectionRefusedError):
-            pass
+        await stop_test_broker(self.config)
         self.temp.cleanup()
 
     async def client(self, **kwargs):
@@ -250,6 +246,19 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
         self.clients.append(other)
         reply = await other.start(version="2026-07-28")
         self.assertEqual(reply["result"]["protocolVersion"], "2025-11-25")
+
+    async def test_stop_waits_for_the_broker_process_to_exit(self):
+        client = await self.client()
+        await client.tool("codex_projects")
+        await client.close()
+        pid = (await rpc(self.config, "ping"))["pid"]
+        result = await stop_test_broker(self.config)
+        self.assertEqual(result, {"stopped": True, "pid": pid})
+        if IS_WINDOWS:
+            self.assertFalse(process_running(pid))
+        # The state directory can be cleaned up immediately (Windows locks open files).
+        (self.config.state_dir / "broker.log").unlink()
+        self.assertEqual((await stop_test_broker(self.config))["stopping"], False)
 
     async def test_progress_is_optional_and_poll_cancel_keeps_task(self):
         client = await self.client()

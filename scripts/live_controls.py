@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in live steering, interruption and filesystem-boundary checks.
 
-Uses real account usage and an already configured disposable test project.
+Uses real account usage. Pass a disposable project directory with --workdir.
 No approval is granted. An outside marker contains only synthetic test data.
 """
 import argparse

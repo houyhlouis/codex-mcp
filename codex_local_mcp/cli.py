@@ -4,7 +4,8 @@ import json
 import os
 import sys
 
-from .broker import ensure_broker, rpc, run_broker
+from . import __version__
+from .broker import ensure_broker, rpc, run_broker, stop_broker
 from .config import load_config
 from .mcp import MCP, review_schema
 from .security import BridgeError, redact
@@ -51,10 +52,7 @@ async def execute(args):
         await run_broker(config)
         return
     if args.command == "stop":
-        try:
-            result = await rpc(config, "stop")
-        except (FileNotFoundError, ConnectionRefusedError):
-            result = {"stopping": False, "message": "Broker is not running"}
+        result = await stop_broker(config)
     else:
         await ensure_broker(config)
         if args.command == "start":
@@ -71,10 +69,18 @@ async def execute(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Local persistent Codex subagent MCP server")
+    parser.add_argument("--version", action="version", version=f"codex-local-mcp {__version__}")
     parser.add_argument("--config", help="Optional operator-owned TOML settings; work directories are supplied by the main agent")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("serve", "broker", "start", "stop", "status"):
-        sub.add_parser(name)
+    commands = {
+        "serve": "Run the MCP stdio server (this is what MCP clients launch)",
+        "broker": "Run the background broker in the foreground (normally started automatically)",
+        "start": "Start the background broker if it is not running and print its PID",
+        "stop": "Stop the background broker and wait until it has exited",
+        "status": "Show the Codex version, sign-in type and pending requests",
+    }
+    for name, text in commands.items():
+        sub.add_parser(name, help=text, description=text)
     cmd = sub.add_parser("call", help="Call an allowlisted tool for diagnosis")
     cmd.add_argument("tool")
     cmd.add_argument("--args", default="{}", help="JSON object; '-' reads stdin (use for sensitive input)")

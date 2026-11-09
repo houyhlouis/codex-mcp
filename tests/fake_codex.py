@@ -8,6 +8,7 @@ import sys
 import uuid
 import copy
 import threading
+import time
 from pathlib import Path
 
 for stream in (sys.stdin, sys.stdout, sys.stderr):
@@ -19,14 +20,25 @@ if "--version" in sys.argv:
     raise SystemExit(0)
 
 DATA = Path.cwd() / "fake-history.json"
-threads = json.loads(DATA.read_text()) if DATA.exists() else {}
+threads = json.loads(DATA.read_text(encoding="utf-8")) if DATA.exists() else {}
 pending = {}
 jobs = {}
 counter = 1000
 
 
 def persist():
-    DATA.write_text(json.dumps(threads))
+    # Replace atomically: tests read this file while the fixture is running,
+    # and a truncate-then-write could expose an empty file (seen on Windows).
+    temporary = DATA.with_name(DATA.name + ".tmp")
+    temporary.write_text(json.dumps(threads), encoding="utf-8")
+    for _ in range(100):
+        try:
+            os.replace(temporary, DATA)
+            return
+        except PermissionError:
+            # Windows refuses to replace a file another process is reading.
+            time.sleep(0.01)
+    os.replace(temporary, DATA)
 
 
 def send(value):

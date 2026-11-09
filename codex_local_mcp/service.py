@@ -225,7 +225,11 @@ class Service(ExtendedControls):
                     raise BridgeError("request_id was already used with different arguments")
                 if row["state"] == "done":
                     return json.loads(row["result"])
-                raise BridgeError(f"Previous operation is {row['state']}; inspect task {row['task_id']} and events before issuing a new request_id")
+                error = (json.loads(row["result"]) if row["result"] else {}).get("error")
+                detail = f" (it failed with: {error})" if error else ""
+                target = f"task {row['task_id']}" if row["task_id"] else "codex_list"
+                raise BridgeError(f"Previous operation with this request_id is {row['state']}{detail}. "
+                                  f"Inspect {target} and its events, then use a new request_id if more work is needed")
             with self.store.db:
                 self.store.db.execute("INSERT INTO operations(id,fingerprint,state,task_id) VALUES (?,?,'running',?)",
                                       (key, fingerprint, args.get("task_id")))
@@ -248,6 +252,9 @@ class Service(ExtendedControls):
         project = Path(descriptor["path"])
         self.capacity(str(project))
         model, effort = await self.choose_model(model, effort, service_tier)
+        if service_tier == "default":
+            # "default" means no explicit tier; it is not a catalog tier id.
+            service_tier = None
         task = {"id": str(uuid.uuid4()), "thread_id": None, "project_id": descriptor["id"], "project": str(project),
                 "model": model, "effort": effort, "access": access, "status": "starting",
                 "turn_id": None, "created_at": time.time(), "updated_at": time.time(),
@@ -599,16 +606,14 @@ class Service(ExtendedControls):
 
     async def respond(self, request_id, response, *, human=False):
         req = self.review_request(request_id)
-        if req["requires_human"] and not human and not self.config.approval_relay:
-            # Denials are always safe. Positive answers require a user-facing UI
-            # or an operator-configured trusted relay.
-            if response not in ({"decision": "decline"}, {"decision": "cancel"},
-                                {"action": "decline"}, {"action": "cancel"}, {"permissions": {}}):
-                raise BridgeError("Human review required. Use codex_review_request or the local review command; approval_relay is disabled")
         params = self.raw_requests.get(request_id)
         if params is None:
             raise BridgeError("Live request is unavailable; resume and request fresh approval")
         result = self.validate_response(req, params, response)
+        if req["requires_human"] and not human and not self.config.approval_relay and not self.is_denial(req["kind"], result):
+            # Denials are always safe. Positive answers require a user-facing UI
+            # or an operator-configured trusted relay.
+            raise BridgeError("Human review required. Use codex_review_request or the local review command; approval_relay is disabled")
         with self.store.db:
             req["status"] = "answering"
             self.store.save("requests", req)
@@ -683,7 +688,8 @@ class Service(ExtendedControls):
                 if entry["path"].get("type") != "path":
                     raise BridgeError("Special/glob permission grants are not exposed")
                 paths.append(entry["path"]["path"])
-            if any(not within(Path(p).resolve(), Path(task["project"])) for p in paths):
+            project = Path(task["project"])
+            if any(not within((project / p).resolve(), project) for p in paths):
                 raise BridgeError("Filesystem grants must stay within this task's project")
             return {"permissions": grants, "scope": "turn"}
         if kind == "elicitation":
@@ -697,6 +703,17 @@ class Service(ExtendedControls):
             validate(response.get("content"), params.get("requestedSchema", {}))
             return response
         raise BridgeError("Unsupported response kind")
+
+    @staticmethod
+    def is_denial(kind, result):
+        """True for a validated response that grants nothing."""
+        if kind in ("command_approval", "file_approval"):
+            return result.get("decision") in ("decline", "cancel")
+        if kind == "permissions":
+            return all(value is None for value in result.get("permissions", {}).values())
+        if kind == "elicitation":
+            return result.get("action") in ("decline", "cancel")
+        return False
 
     @staticmethod
     def subset(granted, requested):

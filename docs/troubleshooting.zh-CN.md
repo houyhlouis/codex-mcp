@@ -1,63 +1,66 @@
-# 故障排查
+# 故障排除
 
-[English](troubleshooting.md) | 简体中文 · [中文首页](../README.zh-CN.md)
+[English](troubleshooting.md) | 简体中文 · [返回 README](../README.zh-CN.md)
 
-从源码根目录执行以下命令。Windows 上如果 `python` 不在 `PATH` 中，可改用 `py -3`。默认不需要配置文件；只有使用了自定义设置时才添加 `--config`。
+请在 `codex-mcp` 文件夹中运行以下命令。Windows 上用 `py -3` 代替 `python3`。如果使用了配置文件，请在命令前加上 `--config /path/config.toml`。
 
-## 检查启动
+## 先做这些检查
 
 ```bash
-python --version
-codex --version
-codex login status
-python server.py status
+python3 --version              # 3.11 或更新
+codex --version                # 0.167.0 或更新
+codex login status             # 已登录
+python3 server.py --version
+python3 server.py status       # 启动 broker；应显示 "signed_in": true
 ```
 
-`status` 会按需启动私有后台和 Codex 连接，但不会启动编程轮次。它只报告认证类型，不暴露凭据。
+`codex doctor` 可以检查 Codex 本身的安装情况。broker 的私有日志是状态文件夹中的 `broker.log`：macOS/Linux 为 `~/.local/state/codex-mcp/`，Windows 为 `%LOCALAPPDATA%\CodexMCP\`。
 
-| 现象 | 原因与处理方式 |
+## 常见问题
+
+| 现象 | 原因与解决方法 |
 |---|---|
-| `No module named fcntl` 或缺少 Unix API | 使用包含 Windows 原生适配的当前源码，参见 [平台说明](platforms.zh-CN.md)。 |
-| `Codex executable not found` | 将 `codex_binary` 设为已安装程序的绝对路径，或确保 MCP 客户端的 `PATH` 能找到它。 |
-| 工作目录不存在 | 让主代理通过 `codex_projects` 创建目录，或选择已有的绝对 `workdir`。 |
-| 项目与私有状态/配置重叠 | 选择不包含服务私有状态或真实设置文件的独立项目目录；整个用户主目录不能作为项目。 |
-| 配置文件所有者或权限错误 | Unix 上文件应属于当前用户且不能被组/其他用户写入，例如设为 `0600`；Windows 上会检查所有者和 DACL。 |
-| 状态目录权限错误 | Unix 上已存在的状态目录应属于当前用户且为 `0700`；Windows 上需要可落实私有 DACL。不要通过放宽检查规避问题。 |
-| Unix 套接字路径过长 | 使用更短的私有 `state_dir`。实现要求完整套接字路径不超过 100 字节。 |
-| 后台启动失败 | 查看私有状态目录中的 `broker.log`。受限环境可能禁止本地 IPC 或必要的沙箱功能。 |
-| 原生沙箱启动失败 | 先确认 Codex 的正常沙箱能在该环境运行；桥接不会用完全访问模式替代。 |
-| 自定义运行时/工具不可见 | 只将必要的只读运行时或依赖路径加入 `toolchain_paths`，然后重启后台。 |
-| 模型、推理强度或服务档位被拒绝 | 刷新 `codex_models` 并使用提供的组合。出现在模型目录中不等于具有调用权限。 |
-| 命名权限配置被拒绝 | 查看原生错误和管理员要求，不要降级为无限制访问来绕过限制。 |
+| `Codex executable not found` | MCP 客户端看到的 `PATH` 中没有 Codex。在[配置文件](configuration.zh-CN.md)中把 `codex_binary` 设为绝对路径。 |
+| `Codex 0.167.0 or newer is required` | 运行 `codex update`，然后运行 `python3 server.py stop`。 |
+| `/mcp` 或客户端的服务器列表中没有 `codex`，或显示失败 | 在终端中运行客户端配置里的那条命令（把 `serve` 换成 `status`），查看错误信息。确认 `server.py` 的路径是绝对路径。 |
+| `A broker started by a different version or configuration is still running` | 你更新了代码或修改了设置。运行 `python3 server.py stop`（如有 `--config` 请加上相同参数），然后重试。 |
+| `Broker failed to start` / `did not become ready` | 查看状态文件夹中的 `broker.log`。某些受限容器禁止使用 Unix 套接字。 |
+| `Work directory ... missing` / `must be an absolute path` | 传入绝对路径，或让主代理用 `codex_projects`（`action: "create"`）创建文件夹。 |
+| `Select a dedicated project directory, not the home directory` | 请选择一个项目子文件夹。整个主目录或盘符根目录不能作为项目。 |
+| `Project directory overlaps private state` | 项目包含状态文件夹或配置文件，或位于它们之中。请换一个文件夹。 |
+| `Another task is active in this project` | 同一文件夹中同一时间只能有一个独立任务。等待、中断它，或使用其他文件夹 / worktree。 |
+| `Concurrent task limit reached` | 结束或中断一个任务，或者调大 `max_tasks`。 |
+| `Configuration must be owned by this user...` | 对配置文件执行 `chmod 600`（macOS/Linux）。在 Windows 上，确认只有你的账户可以修改它。 |
+| `State directory must be owned by this user with mode 0700` | 对状态文件夹执行 `chmod 700`，或选择新的 `state_dir`。 |
+| `state_dir is too long for a Unix socket path` | 选择更短的 `state_dir`。 |
+| `The legacy unelevated Windows sandbox cannot enforce denied reads` | 把 Codex 切换回默认的 Windows 沙箱（见[安装细节](installation.zh-CN.md#windows-说明)）。 |
+| Codex 内部提示某个工具"not found"（例如装在特殊位置的编译器） | 把它所在的文件夹加入 `toolchain_paths`，然后 `stop` broker。 |
+| `Model is not in the visible Codex catalog` / `Unsupported reasoning effort` | 调用 `codex_models`，使用其中列出的组合。 |
+| `Previous operation with this request_id is uncertain` | 这个键已经用过，且那次操作失败或被打断。检查任务后，换一个新的 `request_id`。 |
+| `request_id was already used with different arguments` | 每个新操作都要使用新的、唯一的 `request_id`。 |
 
-## 修改配置或升级源码后
+## 任务处于等待状态
 
-停止后台，然后重新连接 MCP 客户端：
+`waiting` 状态的任务需要一个回答。
 
-```bash
-python server.py stop
-```
+1. 用 `codex_requests` 列出待处理请求（或读取 `codex_get` 中的 `pending_requests`）。
+2. 对于 `parent_question`，主代理用 `codex_respond` 和 `{"text": "..."}` 回答。
+3. 对于审批和用户问题，使用 `codex_review_request`。如果客户端无法显示提示框，在终端中运行 `python3 server.py review REQUEST_ID`。
+4. Codex 重启后请求会过期。如果回答因过期被拒绝，请调用 `codex_resume`，让 Codex 重新发起请求。
 
-如果先前使用了设置文件，应在 `stop` 前传入同一 `--config`。下一次工具调用会重新启动后台。启动时会核对配置和版本指纹，新适配器不会静默复用配置不同的后台。较早的 `workspace_roots` 设置应移除，项目改由工具选择。继续未完成工作前，应恢复会话并核对历史。
+如果取消子代理的审批后父任务一直在等待，请中断父任务的这一轮，等待 `interrupted`，再发送一条说明下一步做法的后续指令。
 
-## 任务停在等待状态
+## 关闭客户端后任务就停止了
 
-- 查看 `codex_requests` 或 `codex_get.pending_requests`，注意请求来自哪个子任务。
-- 对 `parent_question`，用 `codex_respond` 提交 `response: {"text": "..."}`。
-- 人工确认使用 `codex_review_request`；客户端无法显示时，在交互终端运行 `review REQUEST_ID`。
-- `approve_for_me` 是原生自动审核，与 `approval_relay` 不同；它仍可拒绝操作，或留下需要人工处理的请求。
-- 后台重启后不能回答已经过期的请求，应先恢复和核对状态，再等待新请求。
+有些 MCP 宿主程序退出时会结束所有子进程，broker 也会被结束。请在打开客户端之前，先在普通终端中运行 `python3 server.py start` 启动 broker。
 
-取消子代理审批可能让父代理继续等待。可以中断父代理当前轮次，等到状态变成 `interrupted`，再发送后续说明。不要自动重试已被拒绝的操作。详见 [工作流示例](../examples/native-controls.md)。
+## 崩溃或重启后的恢复
 
-## 队列、重试与进度不完整
+- 正在进行的任务会变为 `needs_resume`。调用 `codex_resume`，阅读 `codex_history`，再发送后续指令。不会自动重放任何内容。
+- 从上次保存的游标继续读取 `codex_events`，已提交的事件不会丢失。
+- `uncertain` 状态表示某个操作的确认丢失了。重复任何操作之前，先查看 `codex_get` 和 `codex_history`。
+- 如果排队的消息提示"is no longer pending"，说明 Codex 很可能已经开始执行它。请检查任务，不要重复添加。
 
-已加载的空闲会话可能立即消费新增队列项。如果修改或删除时提示该项不再等待，应查看状态和历史，而不是再次添加同一指令。
+## 报告问题
 
-只有参数完全一致时才可重用操作键。确认结果不确定，意味着上游操作可能已经发生；应先检查任务和原生历史，再决定下一步。已保存的成功确认也可能不是最新快照，当前状态以 `codex_get` 为准。
-
-处理完一页后再保存事件游标。不同任务过滤条件使用不同游标，有 `has_more` 时先读完剩余页面。客户端可能截断较大的工具输出，必要时减小事件或历史分页大小。轮询不依赖客户端通知，但主代理必须继续轮询才能发现新问题和完成状态。
-
-## 提供有效的问题描述
-
-说明服务版本、Python/Codex 版本、系统、失败的工具或动作、脱敏后的错误，以及离线夹具测试是否能复现。配置示例中的真实路径应替换为占位符。不要上传完整状态数据库、原生会话历史或认证目录，它们可能包含私有提示、输出和项目内容。安全相关问题见 [安全报告说明](../SECURITY.md)。
+请附上 `python3 server.py --version`、`codex --version` 的输出、操作系统、失败的工具调用以及（已脱敏的）错误信息，并说明离线测试（`python3 -m unittest discover`）是否通过。不要上传状态文件夹、`~/.codex` 或完整的对话历史，其中可能包含私有代码和提示词。安全问题请参见 [SECURITY.md](../SECURITY.md)。

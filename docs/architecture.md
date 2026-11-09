@@ -1,80 +1,106 @@
-# Architecture and message flow
+# Architecture
 
-English | [简体中文](architecture.zh-CN.md)
+[Back to README](../README.md)
 
-[English README](../README.md) · [中文 README](../README.zh-CN.md) · [Tool reference](tools.md)
+## Components
 
-## Processes and responsibilities
+```text
+MCP client (e.g. Claude Code)
+    │  MCP JSON-RPC over stdin/stdout
+    ▼
+server.py serve            ── mcp.py, tools.py: handshake, tool schemas, validation, human prompts
+    │  one JSON request per connection over a private Unix socket / Windows named pipe
+    ▼
+background broker          ── broker.py: lifecycle, locking, local IPC
+    │                         service.py, extensions.py: tasks, approvals, subagents, controls
+    │                         store.py: SQLite tasks, requests, operation keys, event journal
+    │  JSON-RPC over the child's stdin/stdout
+    ▼
+codex app-server           ── backend.py: launches Codex, sends requests, dispatches events in order
+    │  native sign-in, sandbox, approvals, tools
+    ▼
+your project / OpenAI model service
+```
 
-| Component | Responsibility | Implementation |
-|---|---|---|
-| MCP adapter | Tool discovery, argument validation, stdio framing, optional human elicitation | [mcp.py](../codex_local_mcp/mcp.py), [tools.py](../codex_local_mcp/tools.py) |
-| Background broker | Same-user Unix-socket/Windows-pipe IPC, process lifecycle, shared task service | [broker.py](../codex_local_mcp/broker.py) |
-| Codex connection | Launch installed app-server, exchange structured requests, dispatch ordered events | [backend.py](../codex_local_mcp/backend.py) |
-| Task service | Conversations, input, approvals, summaries and event replay | [service.py](../codex_local_mcp/service.py), [extensions.py](../codex_local_mcp/extensions.py) |
-| Persistence | SQLite task records, requests, operation acknowledgements and journal | [store.py](../codex_local_mcp/store.py) |
-| Boundaries | Operator configuration, project paths, private files and output redaction | [config.py](../codex_local_mcp/config.py), [security.py](../codex_local_mcp/security.py) |
+| Module | Responsibility |
+|---|---|
+| [`cli.py`](../codex_local_mcp/cli.py) | Command-line entry point (`serve`, `start`, `stop`, `status`, `review`, `call`) |
+| [`mcp.py`](../codex_local_mcp/mcp.py) | MCP stdio server, protocol negotiation, progress notifications, form elicitation |
+| [`tools.py`](../codex_local_mcp/tools.py) | The 32 tool schemas, the argument validator and the dispatch allowlist |
+| [`broker.py`](../codex_local_mcp/broker.py) | Starting, finding and stopping the broker; the private IPC transport |
+| [`service.py`](../codex_local_mcp/service.py) | Task lifecycle, approval routing, event replay, recovery |
+| [`extensions.py`](../codex_local_mcp/extensions.py) | Settings, subagents, fork/review/queue/goal and other native controls |
+| [`backend.py`](../codex_local_mcp/backend.py) | The Codex app-server process and its permission profiles |
+| [`store.py`](../codex_local_mcp/store.py) | SQLite persistence |
+| [`security.py`](../codex_local_mcp/security.py) | Path checks, private files and folders, redaction |
+| [`config.py`](../codex_local_mcp/config.py) | Optional settings file |
+| [`platforms.py`](../codex_local_mcp/platforms.py), [`windows.py`](../codex_local_mcp/windows.py) | OS-specific locking, process, stdio and Win32 named-pipe/ACL code |
 
-The MCP adapter starts when the client connects. A real tool call starts or finds the detached broker; Codex starts when needed. One broker owns one app-server connection, which can host multiple native conversations. Disconnecting the adapter does not terminate the broker. Stopping the broker terminates its Codex process.
+## Lifecycle
 
-The bridge does not install a boot service, modify Codex authentication, run a network listener, or forward arbitrary internal RPC methods. Native Codex uses its existing account/provider configuration to contact the model service.
+- The MCP client starts `server.py serve`. The handshake and `tools/list` work without starting anything else.
+- The first real tool call starts the broker, or connects to the one already running. A startup lock prevents two clients from starting two brokers. The broker runs detached, so it survives the client.
+- The broker starts `codex app-server` on demand. One app-server hosts all conversations.
+- `server.py stop` asks the broker to shut down and waits until the process has exited. On shutdown, the broker stops Codex.
+- The broker records a fingerprint of the server version and settings. A client with a different fingerprint is refused, so an updated server never silently talks to an old broker.
 
-## Main agent and Codex conversation
+## A conversation, step by step
 
 ```mermaid
 sequenceDiagram
     participant Main as Main agent
-    participant Bridge as MCP broker
-    participant Codex as Codex conversation
+    participant Bridge as Broker
+    participant Codex as Codex
     Main->>Bridge: codex_start(prompt)
     Bridge->>Codex: thread/start + turn/start
     Bridge-->>Main: task_id
     Codex->>Bridge: ask_parent(question)
-    Note over Bridge: Persist the pending request
+    Note over Bridge: store the pending request
     Main->>Bridge: codex_events(task_id, cursor)
-    Bridge-->>Main: Question + pending request ID
+    Bridge-->>Main: events + pending request
     Main->>Bridge: codex_respond(request_id, text)
-    Bridge-->>Codex: Tool result for the original request
-    Note over Codex: Continue the same turn
-    Codex->>Bridge: Progress, changes and result
+    Bridge-->>Codex: result of the original tool call
+    Codex->>Bridge: progress, changes, final message
     Main->>Bridge: codex_get(task_id)
-    Bridge-->>Main: Current status and evidence
+    Bridge-->>Main: status, summary, files, commands
 ```
 
-`thread/start` registers `ask_parent` as a dynamic tool and adds instructions describing the subagent role. Codex can invoke that tool when it needs task context. The broker keeps the original native request ID and exposes a separate pending-request ID to the MCP client. A `codex_respond` answer becomes the result of that exact tool call, so Codex can continue within its existing turn.
+`thread/start` registers `ask_parent` as a dynamic tool, adds short subagent instructions, and selects the restricted permission profile. When Codex calls `ask_parent` or asks for an approval, the broker keeps Codex's original request ID and gives the MCP client its own pending-request ID. The answer becomes the result of that exact call, so Codex continues within the same turn.
 
-New instructions use `turn/start`; active steering uses `turn/steer` with an expected turn ID. Ordinary progress and final answers arrive as events. The main agent must poll or wait for those events—the server does not invoke the main agent's model itself. The models keep separate conversation histories; messages, selected context and shared project files provide the connection.
-
-## Native children
-
-`codex_delegate` asks a Codex parent to use its native subagent tools. The bridge then discovers descendants from native events and scoped thread listing. Before subscribing it verifies the parent chain, directory and permission-profile acknowledgement. Each child gets a bridge task ID, with its parent/root IDs retained for routing.
-
-Parent polling includes descendants by default. Children advertising `canAcceptDirectInput: false` must be controlled through the native parent. `family_status` stays active while any known family member is active, queued or awaiting recovery. Parent-turn completion alone does not establish that all delegated work finished.
-
-Native cancellation can interrupt a child without finishing the parent's wait. In that case the main agent can explicitly interrupt the parent and send a follow-up. The bridge does not restart the denied child action or invent its final answer.
+The server never calls the main agent's model itself. The main agent has to poll `codex_events` (or use `wait_seconds`) to see progress. Progress notifications and form prompts are used when the client supports them, but nothing depends on them.
 
 ## IDs and delivery guarantees
 
-| Value | Meaning |
+| ID | Meaning |
 |---|---|
-| `task_id` | Bridge conversation handle, including verified children and explicitly imported root sessions |
-| `thread_id` | Corresponding native Codex conversation ID |
-| `turn_id` | A particular native round of work |
-| Operation `request_id` | Duplicate-protection key for a mutating control call |
-| Pending-request `request_id` | Handle used to answer a specific live question/approval |
-| Event `cursor` | Exclusive replay position in this broker's journal |
-| Native history cursor | Opaque pagination value from Codex history APIs; not an event cursor |
+| `task_id` | The bridge's handle for a conversation (including verified subagents and imported sessions) |
+| `thread_id` | Codex's own conversation ID |
+| `turn_id` | One round of work within a conversation |
+| operation `request_id` | Duplicate-protection key for an action that changes something |
+| pending `request_id` | Handle for one live question or approval |
+| event `cursor` | Exclusive position in this broker's event journal |
+| history `cursor` | Opaque page token from Codex's history APIs (not an event cursor) |
 
-Task state and received events are committed locally. Successful duplicate operations return the saved acknowledgement; uncertain operations are not automatically replayed. After an adapter reconnect, replay from the last consumed cursor. After broker/backend failure, resume and inspect native history. Committed journal entries survive; never-received or uncommitted stream deltas cannot be reconstructed exactly.
+- Task state and received events are committed to SQLite together.
+- A repeated operation key returns the saved acknowledgement. An operation whose outcome is unknown is marked `uncertain` and never replayed automatically.
+- After a client reconnect, replay events from the saved cursor; nothing is lost.
+- After a broker or Codex restart, active tasks become `needs_resume` and pending requests expire. `codex_resume` reloads the conversation and reconciles its latest turn from Codex's history. Events that Codex streamed but the broker never received cannot be reconstructed; Codex's persisted history can be paged with `codex_history`.
+- Reading Codex's output and processing events are separate tasks. Handling a subagent event can therefore query Codex without blocking responses.
 
-The RPC reader and event consumer are separate so handling a child event can query native metadata without blocking incoming RPC responses. Shutdown invalidates live subscriptions and pending approval requests. Expired requests cannot be answered against a new backend generation.
+## Native subagents
 
-## Approval and data boundaries
+`codex_delegate` asks the parent conversation to use Codex's own subagent tools. When a new child appears (through an event or `codex_subagents`), the broker checks that its parent chain reaches a task it owns and that its directory is inside the parent's project. It then resumes the child with the same permission profile and verifies Codex's acknowledgement. The child gets its own `task_id`, and its events and requests are tagged with parent and root IDs. After a backend restart, known children are checked and subscribed again.
 
-Task-context answers are different from permission approvals. Native **Approve for me** selects Codex's `auto_review` reviewer with `on-request` policy and the same restricted project profile. Human requests use MCP elicitation or terminal review; optional `approval_relay` delegates response submission to the main agent. None of these mechanisms is a raw shell or global policy-editing endpoint.
+## Why the Codex app-server
 
-The local state directory retains prompts, event output, diffs and image snapshots. Common credential patterns are redacted, but arbitrary text can still contain sensitive project data. See [security](security.md) for the exact trust model and [limitations](limitations.md) for recovery/platform boundaries.
+The app-server protocol is the only Codex interface with typed, two-way approvals and questions, persistent threads, history paging and native subagent metadata. Alternatives were evaluated:
 
-## Platform and project selection
+| Alternative | Why it was not used |
+|---|---|
+| `codex exec --json` / `exec resume` | Good for batch jobs, but has no interactive approval channel |
+| Official Codex SDKs | Viable. The TypeScript SDK wraps `codex exec`; using the protocol directly avoids a second runtime and keeps request routing explicit |
+| Sharing the user's existing app-server daemon | Would take ownership of a daemon the user may rely on and expose its wider thread list |
+| Driving the terminal UI | Screen scraping and synthetic keystrokes lose typed request IDs and decisions |
+| The old `codex mcp-server` | Removed from current Codex versions |
 
-The main agent passes an absolute workdir or creates/selects a directory through codex_projects. No workspace settings are required. The backend converts each selected directory into a native per-task permission profile. Windows uses private named pipes; macOS and Linux use identity-checked Unix sockets. See [platform notes](platforms.md).
+Request and response shapes are checked against the schema generated by the installed Codex (`scripts/check_protocol.py`).

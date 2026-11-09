@@ -237,8 +237,8 @@ class MCP:
 def review_schema(req):
     kind, params = req["kind"], req["params"]
     if kind == "user_input":
-        properties = {q["id"]: {"type": "string", "title": q["header"],
-                      "description": q["question"] + "\n" + json.dumps(q.get("options") or [])}
+        properties = {q["id"]: {"type": "string", "title": q.get("header") or q["id"],
+                      "description": q.get("question", "") + "\n" + json.dumps(q.get("options") or [])}
                       for q in params["questions"]}
         return {"type": "object", "properties": properties, "required": list(properties)}, lambda c: {
             "answers": {key: {"answers": [value]} for key, value in c.items()}}

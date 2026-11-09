@@ -19,6 +19,9 @@ READ_CONTROL = 0x00020000
 GENERIC_READ, GENERIC_WRITE = 0x80000000, 0x40000000
 REPARSE = 0x400
 TRUSTED_SIDS = {"S-1-5-18", "S-1-5-32-544", "S-1-3-0"}
+SYNCHRONIZE, PROCESS_QUERY_LIMITED_INFORMATION = 0x00100000, 0x1000
+WAIT_TIMEOUT = 0x102
+ERROR_ACCESS_DENIED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED = 5, 232, 535
 
 
 class SecurityAttributes(ctypes.Structure):
@@ -46,6 +49,7 @@ class API:
         self.bind(self.kernel, "LocalFree", [ptr], ptr)
         self.bind(self.kernel, "GetCurrentProcess", [], w.HANDLE)
         self.bind(self.kernel, "OpenProcess", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE)
+        self.bind(self.kernel, "WaitForSingleObject", [w.HANDLE, w.DWORD], w.DWORD)
         self.bind(self.advapi, "OpenProcessToken", [w.HANDLE, w.DWORD, ctypes.POINTER(w.HANDLE)], w.BOOL)
         self.bind(self.advapi, "GetTokenInformation", [w.HANDLE, ctypes.c_int, ptr, w.DWORD, ctypes.POINTER(w.DWORD)], w.BOOL)
         self.bind(self.advapi, "IsTokenRestricted", [w.HANDLE], w.BOOL)
@@ -160,6 +164,27 @@ def current_sid():
     return api().process_sid()
 
 
+def process_running(pid):
+    """Return whether a process is still running, without signalling it.
+
+    os.kill() on Windows terminates the target, so it cannot be used as a
+    liveness probe. A process object is signalled only after the process has
+    exited and the system has closed all of its handles.
+    """
+    a = api()
+    handle = a.kernel.OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        # Access denied means the process exists but belongs to someone else.
+        return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+    try:
+        return a.kernel.WaitForSingleObject(handle, 0) == WAIT_TIMEOUT
+    finally:
+        a.kernel.CloseHandle(handle)
+
+
+_PROTECTED = set()
+
+
 def protect_directory(path):
     """Narrow a dedicated, current-user-owned application directory's DACL."""
     a = api()
@@ -175,6 +200,16 @@ def protect_directory(path):
                 raise PermissionError("Private state directory belongs to another Windows account")
         finally:
             a.kernel.LocalFree(descriptor)
+        key = os.path.normcase(str(path))
+        if key in _PROTECTED:
+            # Already narrowed by this process. Re-verify on every call, but do
+            # not rewrite the DACL: that propagates inherited entries through
+            # the whole state tree on each broker request.
+            try:
+                a.check_access(handle)
+                return
+            except PermissionError:
+                _PROTECTED.discard(key)
         with a.descriptor(directory=True) as attributes:
             present, defaulted, dacl = w.BOOL(), w.BOOL(), ctypes.c_void_p()
             a.check(a.advapi.GetSecurityDescriptorDacl(attributes.lpSecurityDescriptor, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted)))
@@ -182,6 +217,7 @@ def protect_directory(path):
             if error:
                 raise ctypes.WinError(error)
         a.check_access(handle)
+        _PROTECTED.add(key)
     finally:
         a.kernel.CloseHandle(handle)
 
@@ -378,30 +414,40 @@ class PipeServer:
 
     def accept(self):
         handle = self.listener
-        while not self.stopped.is_set():
-            connected = api().kernel.ConnectNamedPipe(handle, None)
-            if not connected and ctypes.get_last_error() != 535:
-                api().kernel.CloseHandle(handle)
-                return
-            if self.stopped.is_set():
-                api().kernel.CloseHandle(handle)
-                return
-            try:
-                verify_peer(handle)
-                next_handle = self.make_pipe()
-            except Exception:
-                api().kernel.DisconnectNamedPipe(handle)
-                api().kernel.CloseHandle(handle)
-                if not self.stopped.is_set():
-                    handle = self.make_pipe()
-                continue
-            worker = threading.Thread(target=self.serve, args=(handle,), daemon=True, name="mcp-pipe-request")
-            with self.workers_lock:
-                self.workers.add(worker)
-            worker.start()
-            handle = next_handle
-            self.listener = handle
-        api().kernel.CloseHandle(handle)
+        try:
+            while not self.stopped.is_set():
+                if not api().kernel.ConnectNamedPipe(handle, None):
+                    error = ctypes.get_last_error()
+                    if error == ERROR_NO_DATA:
+                        # The client connected and left before it was accepted
+                        # (for example a cancelled or killed caller). Reset this
+                        # instance and keep listening instead of going deaf.
+                        api().kernel.DisconnectNamedPipe(handle)
+                        continue
+                    if error != ERROR_PIPE_CONNECTED:
+                        return
+                if self.stopped.is_set():
+                    return
+                try:
+                    verify_peer(handle)
+                except Exception:
+                    api().kernel.DisconnectNamedPipe(handle)
+                    continue
+                try:
+                    next_handle = self.make_pipe()
+                except OSError:
+                    # Out of pipe instances/resources: drop this caller and retry.
+                    api().kernel.DisconnectNamedPipe(handle)
+                    time.sleep(0.1)
+                    continue
+                worker = threading.Thread(target=self.serve, args=(handle,), daemon=True, name="mcp-pipe-request")
+                with self.workers_lock:
+                    self.workers.add(worker)
+                worker.start()
+                handle = self.listener = next_handle
+        finally:
+            # Exactly one close of the instance this thread still owns.
+            api().kernel.CloseHandle(handle)
 
     def serve(self, handle):
         try:

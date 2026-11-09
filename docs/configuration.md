@@ -1,36 +1,57 @@
 # Configuration
 
-English | [简体中文](configuration.zh-CN.md)
+English | [简体中文](configuration.zh-CN.md) · [Back to README](../README.md)
 
-No configuration file is required. The main agent chooses a project through `codex_projects` or supplies an absolute `workdir` to `codex_start`. There is no configured workspace list.
+**No configuration file is needed.** Projects are chosen by the main agent at run time with `codex_projects` or a `workdir` argument. There is no list of allowed workspaces to maintain.
 
-```json
-{"action":"create","path":"C:\\Work\\demo"}
+Create a settings file only to change one of the defaults below.
+
+## Settings
+
+| Setting | Default | Description |
+|---|---|---|
+| `codex_binary` | `"codex"` (looked up on `PATH`) | Codex executable. Use an absolute path if your MCP client does not see the same `PATH` as your terminal. A bare name is only looked up on `PATH`, never in the current folder |
+| `state_dir` | `~/.local/state/codex-mcp` (macOS/Linux, or `$XDG_STATE_HOME/codex-mcp`); `%LOCALAPPDATA%\CodexMCP` (Windows) | Private folder for the broker's database, log and socket. Must be an absolute path of its own, not your home folder. On macOS/Linux the full socket path must fit in 100 bytes |
+| `max_tasks` | `4` | How many independent task families may run at the same time (1–32) |
+| `toolchain_paths` | `[]` | Extra **read-only** absolute paths that Codex's sandbox may use, such as a toolchain installed in an unusual place. System runtimes and the Codex executable are already readable |
+| `approval_relay` | `false` | If `true`, the main agent may *approve* requests on your behalf. Leave it off unless you fully trust the main agent. Not needed for *Approve for me* |
+| `allow_external_tools` | `false` | If `true`, Codex tasks may use the external MCP servers and plugins already configured in your Codex setup. These run outside the project sandbox |
+
+Example (see [config.example.toml](../config.example.toml)):
+
+```toml
+# ~/.config/codex-mcp/config.toml
+codex_binary = "/usr/local/bin/codex"
+max_tasks = 2
+toolchain_paths = ["/opt/toolchains/node-22"]
 ```
 
-Use the returned `project_id` when starting a task, or supply an existing directory:
+On Windows, use TOML single-quoted strings so that backslashes need no escaping:
 
-```json
-{"workdir":"/Users/me/projects/demo","prompt":"Implement the requested feature and run tests.","request_id":"feature-001"}
+```toml
+codex_binary = 'C:\Tools\codex\codex.exe'
 ```
 
-Each task is restricted to its selected project. The server rejects filesystem roots, the whole home directory, private state/credential directories, symlinks and Windows junctions. macOS system aliases such as `/tmp` are normalized. A trusted main agent is responsible for selecting the intended project; directory selection is an explicit access grant.
+Paths may start with `~`. Environment variables such as `$HOME` or `%USERPROFILE%` are **not** expanded.
 
-## Optional settings
+## Using the file
 
-Pass `--config /absolute/settings.toml` before the command if defaults need changing. See [config.example.toml](../config.example.toml).
+Pass `--config` **before** the command, everywhere you run the server:
 
-| Setting | Purpose |
-|---|---|
-| `codex_binary` | Native Codex executable or command on PATH |
-| `state_dir` | Private broker state; defaults to `%LOCALAPPDATA%/CodexMCP` on Windows and `~/.local/state/codex-mcp` on Unix |
-| `max_tasks` | Independent task-family concurrency, 1–32; default 4 |
-| `toolchain_paths` | Additional operator-approved read-only runtime paths |
-| `approval_relay` | Allow trusted main-agent approval responses; default false |
-| `allow_external_tools` | Allow existing external integrations; default false |
+```bash
+python3 server.py --config ~/.config/codex-mcp/config.toml serve      # in the MCP client configuration
+python3 server.py --config ~/.config/codex-mcp/config.toml status
+python3 server.py --config ~/.config/codex-mcp/config.toml stop
+```
 
-Store a real settings file outside directories selected for coding tasks. Native Approve for me is a per-task `approval_mode`, independent of `approval_relay`.
+After changing the file, run `stop` and restart your MCP client. A running broker refuses clients that use a different configuration.
 
-## Earlier development configurations
+## Rules for the settings file
 
-Stop the old broker with its previous settings file, remove `[workspace_roots]`, and restart. Replace old tool arguments `root`/relative `path` with `workdir` or `project_id`. Previously recorded task directories are migrated into the project registry and revalidated before use. No prompts are automatically replayed.
+- It must be owned by you and not writable by other users. On macOS/Linux, run `chmod 600 config.toml`.
+- Keep it outside any project folder that you give to Codex. Codex is denied access to the settings file and the state folder.
+- Unknown keys are rejected, so typos are reported instead of silently ignored.
+
+## Upgrading from early development versions
+
+The old `[workspace_roots]` section has been removed. Delete it from your settings file, then run `stop`. Use `workdir` or `project_id` instead of the old `root` and relative `path` arguments. Existing tasks are migrated automatically and their directories are checked again before use.
