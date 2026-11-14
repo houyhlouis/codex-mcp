@@ -40,7 +40,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "cacheScope": "private",
@@ -93,7 +93,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "cacheScope": "private",
@@ -139,7 +139,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "content": [
@@ -242,7 +242,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "createdAt": "2000-01-01T00:00:00.000Z",
@@ -282,7 +282,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "content": [
@@ -485,7 +485,7 @@
             ],
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "createdAt": "2000-01-01T00:00:00.000Z",
@@ -564,7 +564,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "resultType": "complete"
@@ -602,7 +602,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "createdAt": "2000-01-01T00:00:00.000Z",
@@ -843,7 +843,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "createdAt": "2000-01-01T00:00:00.000Z",
@@ -887,7 +887,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "resultType": "complete"
@@ -925,7 +925,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "createdAt": "2000-01-01T00:00:00.000Z",
@@ -970,7 +970,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "createdAt": "2000-01-01T00:00:00.000Z",
@@ -1017,7 +1017,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "inputRequests": {
@@ -1094,7 +1094,7 @@
           "_meta": {
             "io.modelcontextprotocol/serverInfo": {
               "name": "codex-local-mcp",
-              "version": "0.2.0"
+              "version": "0.2.1"
             }
           },
           "content": [

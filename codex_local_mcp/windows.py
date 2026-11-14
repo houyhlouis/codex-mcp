@@ -19,7 +19,7 @@ INVALID_HANDLE = ctypes.c_void_p(-1).value
 READ_CONTROL = 0x00020000
 GENERIC_READ, GENERIC_WRITE = 0x80000000, 0x40000000
 REPARSE = 0x400
-TRUSTED_SIDS = {"S-1-5-18", "S-1-5-32-544", "S-1-3-0"}
+TRUSTED_SIDS = {"S-1-5-18", "S-1-5-32-544", "S-1-3-0", "S-1-3-4"}
 SYNCHRONIZE, PROCESS_QUERY_LIMITED_INFORMATION = 0x00100000, 0x1000
 WAIT_TIMEOUT = 0x102
 ERROR_ACCESS_DENIED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED = 5, 232, 535
@@ -216,6 +216,11 @@ class FileInfo(ctypes.Structure):
                 ("size_low", w.DWORD), ("links", w.DWORD), ("index_high", w.DWORD), ("index_low", w.DWORD)]
 
 
+class FileBasicInfo(ctypes.Structure):
+    _fields_ = [("created", ctypes.c_int64), ("accessed", ctypes.c_int64),
+               ("written", ctypes.c_int64), ("changed", ctypes.c_int64), ("attributes", w.DWORD)]
+
+
 class API:
     def __init__(self):
         if os.name != "nt":
@@ -242,6 +247,7 @@ class API:
         self.bind(self.advapi, "GetAce", [ptr, w.DWORD, ctypes.POINTER(ptr)], w.BOOL)
         self.bind(self.kernel, "CreateFileW", [w.LPCWSTR, w.DWORD, w.DWORD, ctypes.POINTER(SecurityAttributes), w.DWORD, w.DWORD, w.HANDLE], w.HANDLE)
         self.bind(self.kernel, "GetFileInformationByHandle", [w.HANDLE, ctypes.POINTER(FileInfo)], w.BOOL)
+        self.bind(self.kernel, "GetFileInformationByHandleEx", [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD], w.BOOL)
         self.bind(self.kernel, "CreateNamedPipeW", [w.LPCWSTR, w.DWORD, w.DWORD, w.DWORD, w.DWORD, w.DWORD, w.DWORD, ctypes.POINTER(SecurityAttributes)], w.HANDLE)
         self.bind(self.kernel, "ConnectNamedPipe", [w.HANDLE, ptr], w.BOOL)
         self.bind(self.kernel, "DisconnectNamedPipe", [w.HANDLE], w.BOOL)
@@ -316,6 +322,8 @@ class API:
         try:
             if self.sid_text(owner) not in (current_sid(), "S-1-5-32-544") or not dacl:
                 raise PermissionError("Expected a user-owned object with an explicit Windows DACL")
+            # OWNER RIGHTS (Python's Windows mkdir(0700)) applies only to the
+            # owner already verified above, never to another account.
             trusted = TRUSTED_SIDS | {current_sid()}
             for index in range(ctypes.cast(dacl, ctypes.POINTER(ACL)).contents.count):
                 ace = ctypes.c_void_p()
@@ -420,6 +428,17 @@ def open_handle(path, directory=False, share=1, access=None, disposition=3, attr
     except Exception:
         a.kernel.CloseHandle(handle)
         raise
+
+
+def file_change_time(path):
+    """True NT change time; Python 3.11 st_ctime is the creation time."""
+    handle = open_handle(path, share=7, access=0x80)
+    try:
+        info = FileBasicInfo()
+        api().check(api().kernel.GetFileInformationByHandleEx(handle, 0, ctypes.byref(info), ctypes.sizeof(info)))
+        return info.changed
+    finally:
+        api().kernel.CloseHandle(handle)
 
 
 @contextmanager

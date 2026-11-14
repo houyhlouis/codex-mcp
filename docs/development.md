@@ -33,6 +33,8 @@ python3 -m unittest discover -v
 python3 -m compileall -q codex_local_mcp tests scripts server.py
 ```
 
+`python3 scripts/run_tests.py` runs the same tests with the same result, and is what CI uses. It prints each failure's traceback as soon as it happens, so a cancelled run still shows why tests failed. If one test runs longer than 180 seconds, it prints the stacks of all threads (and again every 180 seconds) without stopping the run. At the end it lists the 25 slowest tests. Arguments are passed on to test discovery, for example `python3 scripts/run_tests.py -p "test_worktrees*.py"`.
+
 The suite needs no Codex installation, no sign-in and no third-party packages. `tests/fake_codex.py` is a deterministic stand-in for `codex app-server` that never calls a model or runs the commands it describes. Tests copy it into private temporary folders, so missing executable bits (for example after a Windows ZIP transfer) do not matter.
 
 The suite covers, among other things:
@@ -53,7 +55,7 @@ Restricted sandboxes must allow local Unix sockets and subprocesses for the IPC 
 [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) runs on every push and pull request on Ubuntu, Windows and macOS with Python 3.11 and 3.14:
 
 1. byte-compile all sources;
-2. run the offline test suite;
+2. run the offline test suite with `scripts/run_tests.py`, with a limit of 45 minutes per job (Windows and macOS are much slower than Linux at starting processes);
 3. run `scripts/sdk_check.py` with the official MCP Python SDK 1.26.0;
 4. `pip install .` and run the `codex-local-mcp` command;
 5. build a wheel and a source distribution and check them with `scripts/release_check.py`;
@@ -186,7 +188,7 @@ A release is ready when every line below is true. Write down what was actually r
 
 | Date | Environment | Result |
 |---|---|---|
-| 2026-11-14 (0.2.0, in development) | Linux, Python 3.11.18 and 3.14.4, Codex CLI 0.167.0 | 1208 offline tests passed (9 platform-specific skips); official MCP SDK 1.26.0 check passed; protocol check passed; package install and wheel/sdist checks passed; a small and a 274 MB state database written by v0.1.1 were upgraded with real Codex and their finished tasks needed no action; restarts with a running turn and with a running background command, and the leftover-process check, were exercised with real Codex; budgets, a plan running in two worktrees, and a worktree handoff and cleanup were exercised with real Codex; `live_smoke.py`, `live_controls.py`, `live_supervision.py`, `live_extended.py` and `live_child_approval.py` passed against real Codex. Windows and macOS have not been run for this version yet |
+| 2026-11-14 (0.2.1, in development) | Linux, Python 3.11.18 and 3.14.4, Codex CLI 0.167.0 | 1221 offline tests passed (9 platform-specific skips); official MCP SDK 1.26.0 check passed; protocol check passed; package install and wheel/sdist checks passed; a small and a 274 MB state database written by v0.1.1 were upgraded with real Codex and their finished tasks needed no action; restarts with a running turn and with a running background command, and the leftover-process check, were exercised with real Codex; budgets, a plan running in two worktrees, and a worktree handoff and cleanup were exercised with real Codex; `live_smoke.py`, `live_controls.py`, `live_supervision.py`, `live_extended.py` and `live_child_approval.py` passed against real Codex. Windows and macOS have not been run for this version yet |
 | 2026-11-09 (v0.1.1) | Linux, Python 3.14.4, Codex CLI 0.167.0 (ChatGPT sign-in) | 83 offline tests passed (2 platform-specific skips); official MCP SDK 1.26.0 check passed; 42 protocol shapes validated; package install checked; `live_smoke.py` and `live_controls.py` passed against real Codex |
 | 2026-11-08 (v0.1.0) | GitHub Actions: Ubuntu, macOS, Windows × Python 3.11, 3.14 | Ubuntu and macOS passed. Windows failed in test teardown (broker still holding `broker.log`) and in one fixture race. Both are fixed in v0.1.1 |
 | 2026-11-07 (pre-release) | Linux, Codex CLI 0.167.0 | `live_extended.py` and `live_child_approval.py` passed: subagents, automatic review, queue, review, compaction, revert, fork lifecycle, image and file input |

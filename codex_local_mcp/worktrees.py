@@ -14,7 +14,7 @@ import sys
 import tempfile
 import threading
 from contextlib import contextmanager
-from functools import wraps
+from functools import lru_cache, wraps
 from pathlib import Path
 
 from .platforms import IS_WINDOWS, _path_directories, canonical_system_path, lock_file, unlock_file
@@ -42,6 +42,27 @@ class WorktreeError(Exception):
         return {"code": self.code, "message": self.message, **self.details}
 
 
+def _binary_identity(binary):
+    info = Path(binary).stat()
+    change = info.st_ctime_ns
+    if hasattr(info, "st_file_attributes"):
+        from .windows import file_change_time
+        change = file_change_time(binary)
+    return (binary, info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+            change, info.st_mode, getattr(info, "st_file_attributes", 0))
+
+
+@lru_cache(maxsize=16)
+def _check_version(identity):
+    binary = identity[0]
+    version, _ = _git(["--version"], Path(binary).parent, binary=binary, maximum=4096)
+    if _binary_identity(binary) != identity:
+        raise WorktreeError("git_failed", "Git changed during version verification; retry after the installation finishes.")
+    match = re.match(rb"git version (\d+)\.(\d+)\.(\d+)", version)
+    if not match or tuple(map(int, match.groups())) < GIT_MIN_VERSION:
+        raise WorktreeError("git_too_old", "Git 2.36.0 or newer is required.")
+
+
 def _git(args, cwd, *, write=False, index=None, maximum=OUTPUT_BYTES, allowed=(0,), binary=None, audit_keys=None,
          git_dir=None, work_tree=None):
     """The only Git process boundary; readers retain at most their byte cap."""
@@ -58,10 +79,7 @@ def _git(args, cwd, *, write=False, index=None, maximum=OUTPUT_BYTES, allowed=(0
         if not binary or not Path(binary).is_absolute() or IS_WINDOWS and Path(binary).suffix.lower() != ".exe":
             raise WorktreeError("git_missing", "Git was not found on absolute PATH entries; install Git and use its full folder in PATH.")
         binary = str(Path(binary).resolve())
-        version, _ = _git(["--version"], cwd, binary=binary, maximum=4096, **context)
-        match = re.match(rb"git version (\d+)\.(\d+)\.(\d+)", version)
-        if not match or tuple(map(int, match.groups())) < GIT_MIN_VERSION:
-            raise WorktreeError("git_too_old", "Git 2.36.0 or newer is required.")
+        _check_version(_binary_identity(binary))
     env = {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
     env.update(GIT_TERMINAL_PROMPT="0", LC_ALL="C", GIT_NO_REPLACE_OBJECTS="1", GIT_GRAFT_FILE=os.devnull, GIT_ATTR_NOSYSTEM="1")
     if not write:
@@ -150,7 +168,10 @@ def _path(value):
             original = Path.cwd() / original
         original = canonical_system_path(original)
         if IS_WINDOWS:
-            validate_windows_path(str(original))
+            # Git's commondir uses ../... Validate every non-parent name, then
+            # walk the original components below before normalising parents.
+            lexical = Path(original.anchor).joinpath(*(part for part in original.parts[1:] if part != ".."))
+            validate_windows_path(str(lexical))
         current = Path(original.anchor)
         for part in original.parts[1:]:
             current = current.parent if part == ".." else current / part

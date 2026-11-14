@@ -170,7 +170,7 @@ The MCP server then connects to that broker instead of starting its own.
 ## Verifying an installation
 
 ```bash
-python3 server.py --version     # codex-local-mcp 0.2.0
+python3 server.py --version     # codex-local-mcp 0.2.1
 python3 server.py status        # "signed_in": true, codex_version 0.167.0+
 python3 server.py call codex_models --args '{"limit": 3}'
 ```
@@ -198,7 +198,7 @@ The output of `status` also contains `compatibility`. `tested` means that your C
 | MCP 2026-07-28 with Tasks | Protocol | Checked against the published specification and schema only. No SDK and no real client yet |
 | Codex CLI 0.167.0 | Protocol, Live | The server's messages are validated against the schema that Codex generates. Older versions are refused; newer ones are reported as `untested` |
 | Linux, Python 3.11 and 3.14 | Platform, Live | Live tests used a ChatGPT sign-in |
-| Windows and macOS, Python 3.11 and 3.14 | Platform | Run by CI on every push. v0.1.1 passed on both. Version 0.2.0 has not run there yet |
+| Windows and macOS, Python 3.11 and 3.14 | Platform | Run by CI on every push. v0.1.1 passed on both. Version 0.2.1 has not run there yet |
 | Claude Code on Linux | Client | Used with v0.1.1 for long sessions: starting tasks, follow-ups, answering Codex's questions, *Approve for me*, resuming after a restart. Its approval prompt has not been used |
 | Claude Desktop and other clients | not verified | Expected to work, because they use the same protocol |
 | WSL | not verified | See [WSL](#wsl) |

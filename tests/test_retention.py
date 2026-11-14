@@ -8,7 +8,7 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -318,7 +318,7 @@ class RetentionTest(unittest.TestCase):
         plan = self.retention.plan(100)
         raw = json.dumps(plan, sort_keys=True)
         output = render(plan, now=self.clock)
-        local = datetime.fromtimestamp(plan["expires_at"]).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z (%z)")
+        local = datetime.fromtimestamp(plan["expires_at"], timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z (%z)")
         self.assertIn(local, output)
         self.assertIn("60 min left", output)
         self.assertIn("MiB", output)

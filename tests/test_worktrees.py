@@ -932,6 +932,7 @@ class WorktreesTest(unittest.TestCase):
             if args == ["--version"]:
                 return b"git version 2.35.9\n", 0
             return original(args, cwd, **kwargs)
+        w._check_version.cache_clear()
         with patch.object(w, "_git", old):
             self.assert_code("git_too_old", w.plan, self.repo, "trial")
         self.assert_code("git_failed", w._git, ["log", "--format=%B"], self.repo, maximum=1)

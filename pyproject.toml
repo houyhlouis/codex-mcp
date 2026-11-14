@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-local-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local persistent Codex subagents over MCP, with durable events and human approvals"
 readme = "README.md"
 license = "MIT"

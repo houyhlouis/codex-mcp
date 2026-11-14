@@ -80,6 +80,7 @@ python3 server.py doctor
 | `Inline review turn identity is unresolved; use codex_resume, then codex_history` 或 `Inline review turn identity is ambiguous across threads; ...` | 服务器无法证明哪一个回合是内联代码审查，通常是子代理内部的审查。为了不做猜测，任务保持忙碌状态。调用 `codex_resume`，然后查看 `codex_history`。 |
 | `Revert requires a root turn id; use logical_turn_id from codex_history` | 这个 ID 属于另一个回合内部的回合，例如内联代码审查。请使用该条目的 `logical_turn_id`。 |
 | `Turn was not found in bounded native history; inspect codex_history before reverting` | 服务器查看了最近 500 个回合，没有找到这一回合。在 `codex_history` 中核对 ID。 |
+| `Git changed during version verification; retry after the installation finishes.` | 服务器检查 Git 版本时，Git 程序被替换了，通常是因为 Git 正在更新。等更新完成后再重试。 |
 | `Family budget ... reached: observed ..., limit ...` | 任务组的[预算](tools.md#family-usage-and-budgets)（英文）已用完，或软限制让它停了下来。在根任务上用 `codex_settings`（`scope: "next"`，`budget`）提高或去掉限制，然后换一个新的 `request_id` 重试。 |
 | `Cooperative budget stop; may overshoot` | 超过了某个软预算限制，正在运行的回合被中断。查看 `codex_get` 中的 `budget_stop` 和 `family_usage`。已经执行的操作不会被撤销。 |
 | `expected_turn_id requires an active matching turn` | 传给 `codex_delegate` 的回合已经结束。父任务空闲时不要传 `expected_turn_id`。 |

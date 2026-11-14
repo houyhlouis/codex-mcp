@@ -21,7 +21,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ['3.11', '3.14']
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -32,7 +32,7 @@ jobs:
       - name: Byte-compile sources
         run: python -m compileall -q codex_local_mcp tests scripts server.py
       - name: Offline unit and IPC tests
-        run: python -m unittest discover -v
+        run: python scripts/run_tests.py
       - name: Official MCP client dependency
         run: python -m pip install mcp==1.26.0
       - name: Official MCP client compatibility

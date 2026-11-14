@@ -273,7 +273,7 @@ def documentation_paths(root):
     paths.update(path for path in root.iterdir() if path.is_file() and path.suffix.lower() in {".md", ".markdown"})
     paths.update(path for folder in ("docs", "examples") for path in (root / folder).rglob("*")
                  if path.is_file() and path.suffix.lower() in {".md", ".markdown"})
-    return sorted(paths)
+    return sorted(paths, key=lambda path: path.relative_to(root).as_posix())
 
 
 def documentation_issues(root):

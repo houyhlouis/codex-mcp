@@ -1,8 +1,24 @@
 # Changelog
 
-## 0.2.0 — in development
+## 0.2.1 — in development
 
-Stability release that follows the audit of v0.1.1. After updating, run `python3 server.py stop` once. The state database is upgraded automatically on the next start, after a backup is saved next to it.
+Fixes for Windows and macOS, found by the first CI run of 0.2.0 on those systems. Includes everything in 0.2.0. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0; coming from 0.1.1, it is upgraded as described under 0.2.0.
+
+### Fixed
+
+- Windows with Python 3.13 or newer: private folders were refused as unsafe, so the settings, `doctor` and the maintenance commands failed. Python now gives such folders an entry for the folder's owner (*OWNER RIGHTS*), which is accepted once the owner has been checked.
+- Windows: worktrees could not be used, because the path Git records for the shared Git folder (`../..`) was refused.
+- Windows: `prune` could fail to show its plan for some dates.
+
+### Changed
+
+- Worktree commands start half as many Git processes; Git's version is checked once per Git program instead of before every command. This matters most on macOS and Windows.
+- CI runs the tests with `scripts/run_tests.py`, which prints each failure's traceback at once, shows where a test hangs and lists the slowest tests. Each test job may run for 45 minutes instead of 15.
+- 1221 offline tests (1208 in 0.2.0).
+
+## 0.2.0 — 2026-11-14
+
+Stability release that follows the audit of v0.1.1. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database is upgraded automatically on the next start, after a backup is saved next to it.
 
 ### Security
 

@@ -9,7 +9,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import closing, contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .evidence import canonical
@@ -542,7 +542,7 @@ def render(report, *, now=None):
         return f"Backup: {report['backup']} ({report['size_bytes']} bytes; integrity_check=ok)"
     size = report["estimated_reclaimable_bytes"] if report["dry_run"] else report["reclaimed_payload_bytes"]
     label = "Reclaimable" if report["dry_run"] else "Reclaimed"
-    expires = datetime.fromtimestamp(report["expires_at"]).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z (%z)")
+    expires = datetime.fromtimestamp(report["expires_at"], timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z (%z)")
     remaining = max(0, math.ceil((report["expires_at"] - (time.time() if now is None else now)) / 60))
     lines = [f"Prune plan: {report['plan_id']} ({'dry run' if report['dry_run'] else 'applied'})",
              f"{label} payload: {readable_bytes(size)}; estimated retained: {readable_bytes(report['retained_payload_bytes'])}",

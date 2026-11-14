@@ -482,8 +482,9 @@ class WorkspaceProcessesTest(ServiceHarness):
         self.scanner_loop = loop
         ready = asyncio.Event()
         def scan(config, projects):
-            loop.call_soon_threadsafe(ready.set)
+            # Set entered before waking the loop, which checks it at once.
             entered.set()
+            loop.call_soon_threadsafe(ready.set)
             if not release.wait(5):
                 raise AssertionError("The event loop could not release the scanner")
             return observation()

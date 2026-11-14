@@ -170,7 +170,7 @@ python3 server.py start
 ## 验证安装
 
 ```bash
-python3 server.py --version     # codex-local-mcp 0.2.0
+python3 server.py --version     # codex-local-mcp 0.2.1
 python3 server.py status        # "signed_in": true，codex_version 为 0.167.0 或更新
 python3 server.py call codex_models --args '{"limit": 3}'
 ```
@@ -198,7 +198,7 @@ python3 server.py call codex_models --args '{"limit": 3}'
 | MCP 2026-07-28（含 Tasks） | 协议 | 只对照已发布的规范和 schema 检查过，尚未用 SDK 或真实客户端验证 |
 | Codex CLI 0.167.0 | 协议、真实运行 | 服务器的消息会对照 Codex 生成的 schema 进行验证。更旧的版本会被拒绝，更新的版本会标记为 `untested` |
 | Linux，Python 3.11 和 3.14 | 平台、真实运行 | 真实运行测试使用 ChatGPT 登录 |
-| Windows 和 macOS，Python 3.11 和 3.14 | 平台 | 每次推送后由 CI 运行。v0.1.1 在两个系统上都通过了，0.2.0 版本尚未在这两个系统上运行 |
+| Windows 和 macOS，Python 3.11 和 3.14 | 平台 | 每次推送后由 CI 运行。v0.1.1 在两个系统上都通过了，0.2.1 版本尚未在这两个系统上运行 |
 | Linux 上的 Claude Code | 客户端 | 曾配合 v0.1.1 长时间使用：启动任务、后续指令、回答 Codex 的问题、*Approve for me*、重启后恢复。它的审批提示框没有使用过 |
 | Claude Desktop 及其他客户端 | 未验证 | 它们使用相同的协议，预计可以正常工作 |
 | WSL | 未验证 | 见 [WSL](#wsl) |
