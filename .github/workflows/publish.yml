@@ -1,0 +1,41 @@
+name: Publish to PyPI (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type publish codex-local-mcp to authorize this release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-local-mcp-pypi
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: inputs.confirmation == 'publish codex-local-mcp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Build dependencies
+        run: python -m pip install build 'setuptools>=77.0.3' wheel
+      - name: Build, inspect and install both artifacts
+        run: python scripts/release_check.py --require-build --require-install --dist-dir dist
+      - name: Publish verified artifacts through trusted publishing
+        uses: pypa/gh-action-pypi-publish@v1.13.0
+        with:
+          packages-dir: dist/

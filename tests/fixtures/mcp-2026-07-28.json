@@ -1,0 +1,1148 @@
+{
+  "catalog_fixture": "mcp-tools.json",
+  "client_capabilities": {
+    "elicitation": {
+      "form": {}
+    },
+    "extensions": {
+      "io.modelcontextprotocol/tasks": {}
+    }
+  },
+  "format": 1,
+  "messages": [
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "discover",
+        "jsonrpc": "2.0",
+        "method": "server/discover",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          }
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "discover",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "cacheScope": "private",
+          "capabilities": {
+            "extensions": {
+              "io.modelcontextprotocol/tasks": {}
+            },
+            "tools": {}
+          },
+          "instructions": "Choose/create a project directory with codex_projects, then pass its\nproject_id or an existing absolute workdir to codex_start. No workspace config is\nrequired. Select supported options using codex_models. Save task ids\nand event cursors. Poll codex_events (wait_seconds up to 25) until a turn completes,\nrespond to ask_parent requests, and relay human approvals through\ncodex_review_request or the local review command. Never interpret silence as\napproval. Reuse request_id only for identical control operations. Use codex_get\nfor summaries and command evidence. On reconnect, replay from the saved cursor;\nafter a backend restart, resume and inspect history before sending more work.\nNative approve_for_me is selectable with approval_mode; it uses Codex's reviewer,\nnot approval_relay. Use codex_delegate for native delegation and codex_subagents\nto discover children; parent event polling includes their progress and requests.\nCheck family_status and child statuses before treating delegated work as done.\nRespect can_accept_direct_input on children. Use settings, fork, queue, review,\ncompact, archive and history controls for the corresponding native workflows.\nQueued instructions can be consumed immediately: inspect before editing/retrying.\n",
+          "resultType": "complete",
+          "supportedVersions": [
+            "2024-11-05",
+            "2025-03-26",
+            "2025-06-18",
+            "2025-11-25",
+            "2026-07-28"
+          ],
+          "ttlMs": 0
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "tools",
+        "jsonrpc": "2.0",
+        "method": "tools/list",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          }
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "tools",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "cacheScope": "private",
+          "resultType": "complete",
+          "tools": {
+            "$fixture": "mcp-tools.json"
+          },
+          "ttlMs": 0
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "call",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {
+            "action": "list"
+          },
+          "name": "codex_projects"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "call",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "content": [
+            {
+              "text": "{\"projects\": [], \"next_offset\": null, \"note\": \"Projects explicitly selected or created by the main agent\", \"result_version\": 1, \"ok\": true}",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "resultType": "complete",
+          "structuredContent": {
+            "next_offset": null,
+            "note": "Projects explicitly selected or created by the main agent",
+            "ok": true,
+            "projects": [],
+            "result_version": 1
+          }
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "unsupported",
+        "jsonrpc": "2.0",
+        "method": "tasks/list",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          }
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "error": {
+          "code": -32601,
+          "data": {
+            "error": {
+              "code": "unsupported_task_operation",
+              "ids": {},
+              "message": "Unsupported MCP task operation",
+              "next_steps": [
+                "Use tasks/get, tasks/update or tasks/cancel for a returned execution id"
+              ],
+              "retryable": false,
+              "uncertain": false
+            },
+            "ok": false,
+            "result_version": 1
+          },
+          "message": "Unsupported MCP task operation"
+        },
+        "id": "unsupported",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "create",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {
+            "operation_id": "wire-modern-start",
+            "prompt": "approval",
+            "workdir": "/fixture/projects/wire"
+          },
+          "name": "codex_start"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "create",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "createdAt": "2000-01-01T00:00:00.000Z",
+          "lastUpdatedAt": "2000-01-01T00:00:00.000Z",
+          "pollIntervalMs": 1000,
+          "resultType": "task",
+          "status": "working",
+          "taskId": "00000000000000000000000000000001",
+          "ttlMs": null
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "review-no-form",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {
+            "pending_request_id": "00000000-0000-4000-8000-000000000002"
+          },
+          "name": "codex_review_request"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "review-no-form",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "content": [
+            {
+              "text": "{\"status\": \"pending\", \"request\": {\"id\": \"00000000-0000-4000-8000-000000000002\", \"task_id\": \"00000000-0000-4000-8000-000000000003\", \"method\": \"item/commandExecution/requestApproval\", \"kind\": \"command_approval\", \"params\": {\"threadId\": \"00000000-0000-4000-8000-000000000004\", \"turnId\": \"00000000-0000-4000-8000-000000000005\", \"itemId\": \"c1\", \"command\": \"printf fixture\", \"cwd\": \"/fixture/projects/wire\", \"availableDecisions\": [\"accept\", \"decline\", \"cancel\"], \"startedAtMs\": 0}, \"content_redacted\": false, \"redaction_count\": 0, \"rpc_id\": 1001, \"generation\": 1, \"status\": \"pending\", \"created_at\": 1, \"parent_task_id\": null, \"root_task_id\": \"00000000-0000-4000-8000-000000000003\", \"requires_human\": true, \"blocking\": true, \"proposal_hash\": \"0000000000000000000000000000000000000000000000000000000000000006\", \"proposal_revision\": 1, \"person_review_required\": false, \"review_warning\": null, \"permission_summary\": {\"scope\": \"request\", \"scope_verified\": true, \"sources\": 0, \"destinations\": 0, \"filesystem\": 0, \"network_requested\": false, \"session_grant\": false}, \"revision\": 1, \"content_bytes\": 1034, \"proposal_bytes\": 2, \"preview\": \"{\\\"availableDecisions\\\": [\\\"accept\\\", \\\"decline\\\", \\\"cancel\\\"], \\\"command\\\": \\\"printf fixture\\\", \\\"cwd\\\": \\\"/fixture/projects/wire\\\", \\\"itemId\\\": \\\"c1\\\", \\\"startedAtMs\\\": 0, \\\"threadId\\\": \\\"00000000-0000-4000-8000-000000000004\\\", \\\"turnId\\\": \\\"00000000-0000-4000-8000-000000000005\\\"}\", \"preview_truncated\": false, \"details_truncated\": false, \"detail_tool\": \"codex_review_request\", \"pending_request_id\": \"00000000-0000-4000-8000-000000000002\", \"request_id_kind\": \"pending_request\"}, \"next_step\": \"Client has no form elicitation. Run the local review command, or relay a denial with codex_respond.\", \"pending_request_id\": \"00000000-0000-4000-8000-000000000002\", \"request_id_kind\": \"pending_request\", \"result_version\": 1, \"ok\": true}",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "resultType": "complete",
+          "structuredContent": {
+            "next_step": "Client has no form elicitation. Run the local review command, or relay a denial with codex_respond.",
+            "ok": true,
+            "pending_request_id": "00000000-0000-4000-8000-000000000002",
+            "request": {
+              "blocking": true,
+              "content_bytes": 1034,
+              "content_redacted": false,
+              "created_at": 1,
+              "detail_tool": "codex_review_request",
+              "details_truncated": false,
+              "generation": 1,
+              "id": "00000000-0000-4000-8000-000000000002",
+              "kind": "command_approval",
+              "method": "item/commandExecution/requestApproval",
+              "params": {
+                "availableDecisions": [
+                  "accept",
+                  "decline",
+                  "cancel"
+                ],
+                "command": "printf fixture",
+                "cwd": "/fixture/projects/wire",
+                "itemId": "c1",
+                "startedAtMs": 0,
+                "threadId": "00000000-0000-4000-8000-000000000004",
+                "turnId": "00000000-0000-4000-8000-000000000005"
+              },
+              "parent_task_id": null,
+              "pending_request_id": "00000000-0000-4000-8000-000000000002",
+              "permission_summary": {
+                "destinations": 0,
+                "filesystem": 0,
+                "network_requested": false,
+                "scope": "request",
+                "scope_verified": true,
+                "session_grant": false,
+                "sources": 0
+              },
+              "person_review_required": false,
+              "preview": "{\"availableDecisions\": [\"accept\", \"decline\", \"cancel\"], \"command\": \"printf fixture\", \"cwd\": \"/fixture/projects/wire\", \"itemId\": \"c1\", \"startedAtMs\": 0, \"threadId\": \"00000000-0000-4000-8000-000000000004\", \"turnId\": \"00000000-0000-4000-8000-000000000005\"}",
+              "preview_truncated": false,
+              "proposal_bytes": 2,
+              "proposal_hash": "0000000000000000000000000000000000000000000000000000000000000006",
+              "proposal_revision": 1,
+              "redaction_count": 0,
+              "request_id_kind": "pending_request",
+              "requires_human": true,
+              "review_warning": null,
+              "revision": 1,
+              "root_task_id": "00000000-0000-4000-8000-000000000003",
+              "rpc_id": 1001,
+              "status": "pending",
+              "task_id": "00000000-0000-4000-8000-000000000003"
+            },
+            "request_id_kind": "pending_request",
+            "result_version": 1,
+            "status": "pending"
+          }
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "missing-capability",
+        "jsonrpc": "2.0",
+        "method": "tasks/get",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "taskId": "00000000000000000000000000000001"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "error": {
+          "code": -32021,
+          "data": {
+            "error": {
+              "code": "mcp_capability_required",
+              "ids": {},
+              "message": "Missing required client capability",
+              "next_steps": [
+                "Declare the required capability on this request or use ordinary tools"
+              ],
+              "retryable": false,
+              "uncertain": false
+            },
+            "ok": false,
+            "requiredCapabilities": {
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "result_version": 1
+          },
+          "message": "Missing required client capability"
+        },
+        "id": "missing-capability",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "pending",
+        "jsonrpc": "2.0",
+        "method": "tasks/get",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "taskId": "00000000000000000000000000000001"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "pending",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "codex-local-mcp/pendingRequests": [
+              {
+                "blocking": true,
+                "content_bytes": 1083,
+                "content_redacted": false,
+                "created_at": 1,
+                "detail_tool": "codex_review_request",
+                "details_truncated": false,
+                "generation": 1,
+                "id": "00000000-0000-4000-8000-000000000002",
+                "input_key": "00000000000000000000000000000007",
+                "kind": "command_approval",
+                "method": "item/commandExecution/requestApproval",
+                "params": {
+                  "availableDecisions": [
+                    "accept",
+                    "decline",
+                    "cancel"
+                  ],
+                  "command": "printf fixture",
+                  "cwd": "/fixture/projects/wire",
+                  "itemId": "c1",
+                  "startedAtMs": 0,
+                  "threadId": "00000000-0000-4000-8000-000000000004",
+                  "turnId": "00000000-0000-4000-8000-000000000005"
+                },
+                "parent_task_id": null,
+                "pending_request_id": "00000000-0000-4000-8000-000000000002",
+                "permission_summary": {
+                  "destinations": 0,
+                  "filesystem": 0,
+                  "network_requested": false,
+                  "scope": "request",
+                  "scope_verified": true,
+                  "session_grant": false,
+                  "sources": 0
+                },
+                "person_review_required": false,
+                "preview": "{\"availableDecisions\": [\"accept\", \"decline\", \"cancel\"], \"command\": \"printf fixture\", \"cwd\": \"/fixture/projects/wire\", \"itemId\": \"c1\", \"startedAtMs\": 0, \"threadId\": \"00000000-0000-4000-8000-000000000004\", \"turnId\": \"00000000-0000-4000-8000-000000000005\"}",
+                "preview_truncated": false,
+                "proposal_bytes": 2,
+                "proposal_hash": "0000000000000000000000000000000000000000000000000000000000000006",
+                "proposal_revision": 1,
+                "redaction_count": 0,
+                "request_id_kind": "pending_request",
+                "requires_human": true,
+                "review_warning": null,
+                "revision": 1,
+                "root_task_id": "00000000-0000-4000-8000-000000000003",
+                "rpc_id": 1001,
+                "status": "pending",
+                "task_id": "00000000-0000-4000-8000-000000000003"
+              }
+            ],
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "createdAt": "2000-01-01T00:00:00.000Z",
+          "inputRequests": {
+            "00000000000000000000000000000007": {
+              "method": "elicitation/create",
+              "params": {
+                "message": "Codex requests human review. Nothing is approved by default.\ncontent_redacted: false\nredaction_count: 0\n{\"id\": \"00000000-0000-4000-8000-000000000002\", \"task_id\": \"00000000-0000-4000-8000-000000000003\", \"method\": \"item/commandExecution/requestApproval\", \"kind\": \"command_approval\", \"params\": {\"threadId\": \"00000000-0000-4000-8000-000000000004\", \"turnId\": \"00000000-0000-4000-8000-000000000005\", \"itemId\": \"c1\", \"command\": \"printf fixture\", \"cwd\": \"/fixture/projects/wire\", \"availableDecisions\": [\"accept\", \"decline\", \"cancel\"], \"startedAtMs\": 0}, \"content_redacted\": false, \"redaction_count\": 0, \"status\": \"pending\", \"created_at\": 1, \"parent_task_id\": null, \"root_task_id\": \"00000000-0000-4000-8000-000000000003\", \"requires_human\": true, \"blocking\": true, \"proposal_hash\": \"0000000000000000000000000000000000000000000000000000000000000006\", \"proposal_revision\": 1, \"person_review_required\": false, \"review_warning\": null, \"permission_summary\": {\"scope\": \"request\", \"scope_verified\": true, \"sources\": 0, \"destinations\": 0, \"filesystem\": 0, \"network_requested\": false, \"session_grant\": false}, \"revision\": 1, \"permission_view\": {\"format_version\": 1, \"kind\": \"command_approval\", \"cwd\": \"/fixture/projects/wire\", \"requested_cwd\": \"/fixture/projects/wire\", \"project\": \"/fixture/projects/wire\", \"sources\": [], \"destinations\": [], \"filesystem\": [], \"grant_root\": null, \"network\": {\"requested\": false, \"host\": null, \"requested_host\": null, \"protocol\": null, \"scope\": \"none\"}, \"scope\": \"request\", \"session_grant\": false, \"scope_verified\": true, \"unknown\": [], \"settings\": {\"format_version\": 1, \"requested\": {\"model\": null, \"effort\": null, \"access\": \"write\", \"approval_mode\": \"inherit\", \"collaboration_mode\": \"default\", \"service_tier\": null}, \"current_turn_overrides\": {}, \"effective\": {\"access\": \"write\", \"approval_mode\": \"ask\", \"model\": \"test-model\", \"effort\": \"medium\", \"collaboration_mode\": \"default\", \"service_tier\": null, \"approvals_reviewer\": \"user\", \"permission_profile\": \"local_mcp_write_fixture\", \"approval_policy\": \"on-request\", \"cwd\": \"/fixture/projects/wire\", \"verified\": true}, \"inherited\": {\"model\": \"test-model\", \"effort\": \"medium\", \"approval_mode\": \"ask\", \"service_tier\": null}, \"requested_source\": \"recorded_input\", \"inherited_from_task_id\": null, \"configured_boundary\": {\"project\": \"/fixture/projects/wire\", \"read_roots\": [\"/fixture/projects/wire\"], \"write_roots\": [\"/fixture/projects/wire\"], \"system_reads\": \"minimal\", \"network\": \"requires native approval\", \"permission_grants\": \"turn only\"}}}}",
+                "mode": "form",
+                "requestedSchema": {
+                  "properties": {
+                    "decision": {
+                      "description": "accept grants this request once; decline denies it; cancel cancels it",
+                      "enum": [
+                        "decline",
+                        "cancel",
+                        "accept"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "decision"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "lastUpdatedAt": "2000-01-01T00:00:00.000Z",
+          "pollIntervalMs": 1000,
+          "resultType": "complete",
+          "status": "input_required",
+          "statusMessage": "Review the issued human form, or use codex_review_request/local review; parent questions use codex_respond",
+          "taskId": "00000000000000000000000000000001",
+          "ttlMs": null
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "input",
+        "jsonrpc": "2.0",
+        "method": "tasks/update",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "inputResponses": {
+            "00000000000000000000000000000007": {
+              "action": "accept",
+              "content": {
+                "decision": "decline"
+              }
+            }
+          },
+          "taskId": "00000000000000000000000000000001"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "input",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "resultType": "complete"
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "complete",
+        "jsonrpc": "2.0",
+        "method": "tasks/get",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "taskId": "00000000000000000000000000000001"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "complete",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "createdAt": "2000-01-01T00:00:00.000Z",
+          "lastUpdatedAt": "2000-01-01T00:00:00.000Z",
+          "pollIntervalMs": 1000,
+          "result": {
+            "content": [
+              {
+                "text": "{\"id\": \"00000000-0000-4000-8000-000000000003\", \"thread_id\": \"00000000-0000-4000-8000-000000000004\", \"project_id\": \"00000000-0000-4000-8000-000000000008\", \"project\": \"/fixture/projects/wire\", \"model\": \"test-model\", \"effort\": \"medium\", \"access\": \"write\", \"status\": \"waiting\", \"turn_id\": \"00000000-0000-4000-8000-000000000005\", \"created_at\": 1, \"updated_at\": 1, \"summary\": \"\", \"files\": [], \"commands\": [], \"plan\": [{\"step\": \"Run fixture\", \"status\": \"inProgress\"}], \"usage\": null, \"approval_mode\": \"ask\", \"collaboration_mode\": \"default\", \"service_tier\": null, \"name\": null, \"archived\": false, \"requested_settings\": {\"model\": null, \"effort\": null, \"access\": \"write\", \"approval_mode\": \"inherit\", \"collaboration_mode\": \"default\", \"service_tier\": null}, \"projection_turn_id\": \"00000000-0000-4000-8000-000000000005\", \"turn_status\": \"inProgress\", \"evidence_complete\": true, \"evidence_gaps\": [], \"native_cwd\": \"/fixture/projects/wire\", \"verified_generation\": 1, \"native_permission_profile\": \"local_mcp_write_fixture\", \"native_approval_policy\": \"on-request\", \"approvals_reviewer\": \"user\", \"can_accept_direct_input\": true, \"native_status\": {\"type\": \"idle\"}, \"session_id\": \"00000000-0000-4000-8000-000000000004\", \"turn_start\": null, \"diff\": \"\", \"error\": null, \"active_settings\": {}, \"last_automatic_review\": null, \"recovered_turn_status\": null, \"projection_sources\": {}, \"diff_turn_id\": \"00000000-0000-4000-8000-000000000005\", \"queue_reservation\": null, \"queue_uncertain\": false, \"usage_scope\": \"cumulative\", \"workspace_execution_project\": \"/fixture/projects/wire\", \"revision\": 1, \"process_state\": {\"os_process_check\": {\"available\": false, \"reason\": \"disabled\", \"processes_total\": null, \"pids\": [], \"truncated\": false, \"checked_at\": 1}}, \"family_usage\": {\"active_seconds\": 1, \"turns\": 1, \"native_turns\": 0, \"tokens\": null, \"output_bytes\": {\"journal\": 1, \"artifacts\": 0, \"total\": 1}, \"complete\": false, \"gaps\": [\"tokens_not_reported\"], \"reserved_turns\": 0, \"children\": 0, \"reserved_children\": 0, \"native_limit_violations\": [], \"native_goal_budgets\": [], \"native_goal_budgets_truncated\": false, \"token_budget_preference\": \"family_soft_limit\"}, \"budget\": {}, \"budget_stop\": null, \"pending_requests\": [{\"id\": \"00000000-0000-4000-8000-000000000002\", \"task_id\": \"00000000-0000-4000-8000-000000000003\", \"method\": \"item/commandExecution/requestApproval\", \"kind\": \"command_approval\", \"params\": {\"threadId\": \"00000000-0000-4000-8000-000000000004\", \"turnId\": \"00000000-0000-4000-8000-000000000005\", \"itemId\": \"c1\", \"command\": \"printf fixture\", \"cwd\": \"/fixture/projects/wire\", \"availableDecisions\": [\"accept\", \"decline\", \"cancel\"], \"startedAtMs\": 0}, \"content_redacted\": false, \"redaction_count\": 0, \"status\": \"pending\", \"created_at\": 1, \"parent_task_id\": null, \"root_task_id\": \"00000000-0000-4000-8000-000000000003\", \"requires_human\": true, \"blocking\": true, \"proposal_hash\": \"0000000000000000000000000000000000000000000000000000000000000006\", \"proposal_revision\": 1, \"person_review_required\": false, \"review_warning\": null, \"permission_summary\": {\"scope\": \"request\", \"scope_verified\": true, \"sources\": 0, \"destinations\": 0, \"filesystem\": 0, \"network_requested\": false, \"session_grant\": false}, \"revision\": 1, \"content_bytes\": 1001, \"proposal_bytes\": 2, \"preview\": \"{\\\"availableDecisions\\\": [\\\"accept\\\", \\\"decline\\\", \\\"cancel\\\"], \\\"command\\\": \\\"printf fixture\\\", \\\"cwd\\\": \\\"/fixture/projects/wire\\\", \\\"itemId\\\": \\\"c1\\\", \\\"startedAtMs\\\": 0, \\\"threadId\\\": \\\"00000000-0000-4000-8000-000000000004\\\", \\\"turnId\\\": \\\"00000000-0000-4000-8000-000000000005\\\"}\", \"preview_truncated\": false, \"details_truncated\": false, \"detail_tool\": \"codex_review_request\", \"pending_request_id\": \"00000000-0000-4000-8000-000000000002\", \"request_id_kind\": \"pending_request\"}], \"pending_requests_next_cursor\": null, \"pending_requests_has_more\": false, \"pending_requests_total\": 1, \"view\": \"default\", \"family_status\": \"active\", \"subagents\": [], \"subagents_next_offset\": null, \"workspace_claims\": [{\"task_id\": \"00000000-0000-4000-8000-000000000003\", \"kind\": \"turn\", \"family_id\": \"00000000-0000-4000-8000-000000000003\", \"project\": \"/fixture/projects/wire\", \"state\": \"active\", \"data\": {\"turn_id\": \"00000000-0000-4000-8000-000000000005\"}, \"revision\": 1}], \"workspace_claims_next_offset\": null, \"workspace_claims_total\": 1, \"workspace_reserved\": true, \"event_cursor\": 1, \"native_execution\": {\"task_id\": \"00000000-0000-4000-8000-000000000003\", \"thread_id\": \"00000000-0000-4000-8000-000000000004\", \"turn_id\": \"00000000-0000-4000-8000-000000000005\", \"status\": \"completed\"}, \"operation_id\": \"wire-modern-start\", \"request_id_kind\": \"operation\", \"result_version\": 1, \"ok\": true}",
+                "type": "text"
+              }
+            ],
+            "isError": false,
+            "resultType": "complete",
+            "structuredContent": {
+              "access": "write",
+              "active_settings": {},
+              "approval_mode": "ask",
+              "approvals_reviewer": "user",
+              "archived": false,
+              "budget": {},
+              "budget_stop": null,
+              "can_accept_direct_input": true,
+              "collaboration_mode": "default",
+              "commands": [],
+              "created_at": 1,
+              "diff": "",
+              "diff_turn_id": "00000000-0000-4000-8000-000000000005",
+              "effort": "medium",
+              "error": null,
+              "event_cursor": 1,
+              "evidence_complete": true,
+              "evidence_gaps": [],
+              "family_status": "active",
+              "family_usage": {
+                "active_seconds": 1,
+                "children": 0,
+                "complete": false,
+                "gaps": [
+                  "tokens_not_reported"
+                ],
+                "native_goal_budgets": [],
+                "native_goal_budgets_truncated": false,
+                "native_limit_violations": [],
+                "native_turns": 0,
+                "output_bytes": {
+                  "artifacts": 0,
+                  "journal": 1,
+                  "total": 1
+                },
+                "reserved_children": 0,
+                "reserved_turns": 0,
+                "token_budget_preference": "family_soft_limit",
+                "tokens": null,
+                "turns": 1
+              },
+              "files": [],
+              "id": "00000000-0000-4000-8000-000000000003",
+              "last_automatic_review": null,
+              "model": "test-model",
+              "name": null,
+              "native_approval_policy": "on-request",
+              "native_cwd": "/fixture/projects/wire",
+              "native_execution": {
+                "status": "completed",
+                "task_id": "00000000-0000-4000-8000-000000000003",
+                "thread_id": "00000000-0000-4000-8000-000000000004",
+                "turn_id": "00000000-0000-4000-8000-000000000005"
+              },
+              "native_permission_profile": "local_mcp_write_fixture",
+              "native_status": {
+                "type": "idle"
+              },
+              "ok": true,
+              "operation_id": "wire-modern-start",
+              "pending_requests": [
+                {
+                  "blocking": true,
+                  "content_bytes": 1001,
+                  "content_redacted": false,
+                  "created_at": 1,
+                  "detail_tool": "codex_review_request",
+                  "details_truncated": false,
+                  "id": "00000000-0000-4000-8000-000000000002",
+                  "kind": "command_approval",
+                  "method": "item/commandExecution/requestApproval",
+                  "params": {
+                    "availableDecisions": [
+                      "accept",
+                      "decline",
+                      "cancel"
+                    ],
+                    "command": "printf fixture",
+                    "cwd": "/fixture/projects/wire",
+                    "itemId": "c1",
+                    "startedAtMs": 0,
+                    "threadId": "00000000-0000-4000-8000-000000000004",
+                    "turnId": "00000000-0000-4000-8000-000000000005"
+                  },
+                  "parent_task_id": null,
+                  "pending_request_id": "00000000-0000-4000-8000-000000000002",
+                  "permission_summary": {
+                    "destinations": 0,
+                    "filesystem": 0,
+                    "network_requested": false,
+                    "scope": "request",
+                    "scope_verified": true,
+                    "session_grant": false,
+                    "sources": 0
+                  },
+                  "person_review_required": false,
+                  "preview": "{\"availableDecisions\": [\"accept\", \"decline\", \"cancel\"], \"command\": \"printf fixture\", \"cwd\": \"/fixture/projects/wire\", \"itemId\": \"c1\", \"startedAtMs\": 0, \"threadId\": \"00000000-0000-4000-8000-000000000004\", \"turnId\": \"00000000-0000-4000-8000-000000000005\"}",
+                  "preview_truncated": false,
+                  "proposal_bytes": 2,
+                  "proposal_hash": "0000000000000000000000000000000000000000000000000000000000000006",
+                  "proposal_revision": 1,
+                  "redaction_count": 0,
+                  "request_id_kind": "pending_request",
+                  "requires_human": true,
+                  "review_warning": null,
+                  "revision": 1,
+                  "root_task_id": "00000000-0000-4000-8000-000000000003",
+                  "status": "pending",
+                  "task_id": "00000000-0000-4000-8000-000000000003"
+                }
+              ],
+              "pending_requests_has_more": false,
+              "pending_requests_next_cursor": null,
+              "pending_requests_total": 1,
+              "plan": [
+                {
+                  "status": "inProgress",
+                  "step": "Run fixture"
+                }
+              ],
+              "process_state": {
+                "os_process_check": {
+                  "available": false,
+                  "checked_at": 1,
+                  "pids": [],
+                  "processes_total": null,
+                  "reason": "disabled",
+                  "truncated": false
+                }
+              },
+              "project": "/fixture/projects/wire",
+              "project_id": "00000000-0000-4000-8000-000000000008",
+              "projection_sources": {},
+              "projection_turn_id": "00000000-0000-4000-8000-000000000005",
+              "queue_reservation": null,
+              "queue_uncertain": false,
+              "recovered_turn_status": null,
+              "request_id_kind": "operation",
+              "requested_settings": {
+                "access": "write",
+                "approval_mode": "inherit",
+                "collaboration_mode": "default",
+                "effort": null,
+                "model": null,
+                "service_tier": null
+              },
+              "result_version": 1,
+              "revision": 1,
+              "service_tier": null,
+              "session_id": "00000000-0000-4000-8000-000000000004",
+              "status": "waiting",
+              "subagents": [],
+              "subagents_next_offset": null,
+              "summary": "",
+              "thread_id": "00000000-0000-4000-8000-000000000004",
+              "turn_id": "00000000-0000-4000-8000-000000000005",
+              "turn_start": null,
+              "turn_status": "inProgress",
+              "updated_at": 1,
+              "usage": null,
+              "usage_scope": "cumulative",
+              "verified_generation": 1,
+              "view": "default",
+              "workspace_claims": [
+                {
+                  "data": {
+                    "turn_id": "00000000-0000-4000-8000-000000000005"
+                  },
+                  "family_id": "00000000-0000-4000-8000-000000000003",
+                  "kind": "turn",
+                  "project": "/fixture/projects/wire",
+                  "revision": 1,
+                  "state": "active",
+                  "task_id": "00000000-0000-4000-8000-000000000003"
+                }
+              ],
+              "workspace_claims_next_offset": null,
+              "workspace_claims_total": 1,
+              "workspace_execution_project": "/fixture/projects/wire",
+              "workspace_reserved": true
+            }
+          },
+          "resultType": "complete",
+          "status": "completed",
+          "taskId": "00000000000000000000000000000001",
+          "ttlMs": 86400000
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "follow-up",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {
+            "operation_id": "wire-modern-follow-up",
+            "prompt": "hold",
+            "task_id": "00000000-0000-4000-8000-000000000003"
+          },
+          "name": "codex_send"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "follow-up",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "createdAt": "2000-01-01T00:00:00.000Z",
+          "lastUpdatedAt": "2000-01-01T00:00:00.000Z",
+          "pollIntervalMs": 1000,
+          "resultType": "task",
+          "status": "working",
+          "taskId": "00000000000000000000000000000009",
+          "ttlMs": null
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "cancel",
+        "jsonrpc": "2.0",
+        "method": "tasks/cancel",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "taskId": "00000000000000000000000000000009"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "cancel",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "resultType": "complete"
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "cancel-pending",
+        "jsonrpc": "2.0",
+        "method": "tasks/get",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "taskId": "00000000000000000000000000000009"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "cancel-pending",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "createdAt": "2000-01-01T00:00:00.000Z",
+          "lastUpdatedAt": "2000-01-01T00:00:00.000Z",
+          "pollIntervalMs": 1000,
+          "resultType": "complete",
+          "status": "working",
+          "statusMessage": "Interrupt acknowledged; native completion is not yet confirmed",
+          "taskId": "00000000000000000000000000000009",
+          "ttlMs": null
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "cancelled",
+        "jsonrpc": "2.0",
+        "method": "tasks/get",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "taskId": "00000000000000000000000000000009"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "cancelled",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "createdAt": "2000-01-01T00:00:00.000Z",
+          "lastUpdatedAt": "2000-01-01T00:00:00.000Z",
+          "pollIntervalMs": 1000,
+          "resultType": "complete",
+          "status": "cancelled",
+          "taskId": "00000000000000000000000000000009",
+          "ttlMs": 86400000
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "review",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {
+            "pending_request_id": "00000000-0000-4000-8000-000000000010"
+          },
+          "name": "codex_review_request"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "review",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "inputRequests": {
+            "0000000000000000000000000000000c": {
+              "method": "elicitation/create",
+              "params": {
+                "message": "Codex requests human review. Nothing is approved by default.\ncontent_redacted: false\nredaction_count: 0\n{\"id\": \"00000000-0000-4000-8000-000000000010\", \"task_id\": \"00000000-0000-4000-8000-000000000003\", \"method\": \"item/commandExecution/requestApproval\", \"kind\": \"command_approval\", \"params\": {\"threadId\": \"00000000-0000-4000-8000-000000000004\", \"turnId\": \"00000000-0000-4000-8000-000000000013\", \"itemId\": \"c1\", \"command\": \"printf fixture\", \"cwd\": \"/fixture/projects/wire\", \"availableDecisions\": [\"accept\", \"decline\", \"cancel\"], \"startedAtMs\": 0}, \"content_redacted\": false, \"redaction_count\": 0, \"status\": \"pending\", \"created_at\": 1, \"parent_task_id\": null, \"root_task_id\": \"00000000-0000-4000-8000-000000000003\", \"requires_human\": true, \"blocking\": true, \"proposal_hash\": \"000000000000000000000000000000000000000000000000000000000000000e\", \"proposal_revision\": 1, \"person_review_required\": false, \"review_warning\": null, \"permission_summary\": {\"scope\": \"request\", \"scope_verified\": true, \"sources\": 0, \"destinations\": 0, \"filesystem\": 0, \"network_requested\": false, \"session_grant\": false}, \"revision\": 1, \"permission_view\": {\"format_version\": 1, \"kind\": \"command_approval\", \"cwd\": \"/fixture/projects/wire\", \"requested_cwd\": \"/fixture/projects/wire\", \"project\": \"/fixture/projects/wire\", \"sources\": [], \"destinations\": [], \"filesystem\": [], \"grant_root\": null, \"network\": {\"requested\": false, \"host\": null, \"requested_host\": null, \"protocol\": null, \"scope\": \"none\"}, \"scope\": \"request\", \"session_grant\": false, \"scope_verified\": true, \"unknown\": [], \"settings\": {\"format_version\": 1, \"requested\": {\"model\": null, \"effort\": null, \"access\": \"write\", \"approval_mode\": \"inherit\", \"collaboration_mode\": \"default\", \"service_tier\": null}, \"current_turn_overrides\": {}, \"effective\": {\"access\": \"write\", \"approval_mode\": \"ask\", \"model\": \"test-model\", \"effort\": \"medium\", \"collaboration_mode\": \"default\", \"service_tier\": null, \"approvals_reviewer\": \"user\", \"permission_profile\": \"local_mcp_write_fixture\", \"approval_policy\": \"on-request\", \"cwd\": \"/fixture/projects/wire\", \"verified\": true}, \"inherited\": {\"model\": \"test-model\", \"effort\": \"medium\", \"approval_mode\": \"ask\", \"service_tier\": null}, \"requested_source\": \"recorded_input\", \"inherited_from_task_id\": null, \"configured_boundary\": {\"project\": \"/fixture/projects/wire\", \"read_roots\": [\"/fixture/projects/wire\"], \"write_roots\": [\"/fixture/projects/wire\"], \"system_reads\": \"minimal\", \"network\": \"requires native approval\", \"permission_grants\": \"turn only\"}}}}",
+                "mode": "form",
+                "requestedSchema": {
+                  "properties": {
+                    "decision": {
+                      "description": "accept grants this request once; decline denies it; cancel cancels it",
+                      "enum": [
+                        "decline",
+                        "cancel",
+                        "accept"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "decision"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "requestState": "0000000000000000000000000000000b",
+          "resultType": "input_required"
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "review-response",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "elicitation": {
+                "form": {}
+              },
+              "extensions": {
+                "io.modelcontextprotocol/tasks": {}
+              }
+            },
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {
+            "pending_request_id": "00000000-0000-4000-8000-000000000010"
+          },
+          "inputResponses": {
+            "0000000000000000000000000000000c": {
+              "action": "accept",
+              "content": {
+                "decision": "decline"
+              }
+            }
+          },
+          "name": "codex_review_request",
+          "requestState": "0000000000000000000000000000000b"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "review-response",
+        "jsonrpc": "2.0",
+        "result": {
+          "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+              "name": "codex-local-mcp",
+              "version": "0.2.0"
+            }
+          },
+          "content": [
+            {
+              "text": "{\"request_id\": \"00000000-0000-4000-8000-000000000010\", \"status\": \"sent\", \"receipt\": {\"request_id\": \"00000000-0000-4000-8000-000000000010\", \"pending_request_id\": \"00000000-0000-4000-8000-000000000010\", \"request_id_kind\": \"pending_request\", \"task_id\": \"00000000-0000-4000-8000-000000000003\", \"kind\": \"command_approval\", \"generation\": 1, \"thread_id\": \"00000000-0000-4000-8000-000000000004\", \"turn_id\": \"00000000-0000-4000-8000-000000000013\", \"item_id\": \"c1\", \"proposal_revision\": 1, \"proposal_hash\": \"000000000000000000000000000000000000000000000000000000000000000e\", \"proposal_known\": true, \"decision\": \"decline\", \"decision_source\": \"host_elicitation\", \"delivery\": \"sent\", \"content_redacted\": false, \"redaction_count\": 0, \"authorization_scope\": \"request\", \"receipt_id\": \"00000000-0000-4000-8000-000000000015\", \"decided_at\": 1, \"one_shot\": true, \"reusable\": false}, \"note\": \"Codex remains responsible for enforcing its policies\", \"pending_request_id\": \"00000000-0000-4000-8000-000000000010\", \"request_id_kind\": \"pending_request\", \"result_version\": 1, \"ok\": true}",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "resultType": "complete",
+          "structuredContent": {
+            "note": "Codex remains responsible for enforcing its policies",
+            "ok": true,
+            "pending_request_id": "00000000-0000-4000-8000-000000000010",
+            "receipt": {
+              "authorization_scope": "request",
+              "content_redacted": false,
+              "decided_at": 1,
+              "decision": "decline",
+              "decision_source": "host_elicitation",
+              "delivery": "sent",
+              "generation": 1,
+              "item_id": "c1",
+              "kind": "command_approval",
+              "one_shot": true,
+              "pending_request_id": "00000000-0000-4000-8000-000000000010",
+              "proposal_hash": "000000000000000000000000000000000000000000000000000000000000000e",
+              "proposal_known": true,
+              "proposal_revision": 1,
+              "receipt_id": "00000000-0000-4000-8000-000000000015",
+              "redaction_count": 0,
+              "request_id": "00000000-0000-4000-8000-000000000010",
+              "request_id_kind": "pending_request",
+              "reusable": false,
+              "task_id": "00000000-0000-4000-8000-000000000003",
+              "thread_id": "00000000-0000-4000-8000-000000000004",
+              "turn_id": "00000000-0000-4000-8000-000000000013"
+            },
+            "request_id": "00000000-0000-4000-8000-000000000010",
+            "request_id_kind": "pending_request",
+            "result_version": 1,
+            "status": "sent"
+          }
+        }
+      }
+    }
+  ],
+  "normalisation": "Temporary paths, identifiers, timestamps, revisions and derived request byte counts use canonical values",
+  "protocol_version": "2026-07-28",
+  "source": "Modern MCP adapter frames over ordinary private fake Codex subprocess flows"
+}

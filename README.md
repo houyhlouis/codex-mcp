@@ -2,15 +2,16 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**Let Claude Code (or any MCP client) hand coding work to your local OpenAI Codex CLI, and keep a two-way conversation with it.**
+**Let Claude Code (or another compatible MCP client) hand coding work to your local OpenAI Codex CLI, and keep a two-way conversation with it.**
 
 Codex MCP is a small local MCP server. It turns the Codex CLI on your computer into a persistent coding subagent for your main AI agent:
 
 - **Persistent conversations.** Start a task, send follow-ups, steer or interrupt it, and resume it after a restart.
 - **Two-way communication.** Codex can ask the main agent questions (`ask_parent`), and the main agent answers them.
 - **Safe approvals.** Nothing is approved silently. Approvals go to you, or to Codex's own automatic reviewer if you choose *Approve for me*.
-- **Project-scoped sandbox.** Each task can only access the project directory it was given.
-- **Native Codex features.** Subagents, plan mode, code review, forks, queues, history and more: 32 tools in total.
+- **Project-scoped sandbox.** Codex's commands can change files only in the task's project folder, and they have no network access unless you approve it. Outside the project they can read only what programs need to run. See [security](docs/security.md#project-boundary-and-sandbox).
+- **Native Codex features.** Subagents, plan mode, code review, forks, queues, history and more: 34 tools in total.
+- **Parallel work and limits.** Optional Git worktrees give parallel tasks their own checkout and hand back a reviewable patch; small plans start dependent steps in order; family budgets cap turns, time, tokens and stored output.
 - **No extra dependencies.** Uses only the Python standard library. Works on Windows, macOS and Linux, using local pipes and sockets only (never a network port).
 
 ## Contents
@@ -32,7 +33,7 @@ Codex MCP is a small local MCP server. It turns the Codex CLI on your computer i
 | Python | 3.11 or newer | `python3 --version` (Windows: `py -3 --version`) |
 | OpenAI Codex CLI | 0.167.0 or newer | `codex --version` |
 | A Codex sign-in | ChatGPT account or API key | `codex login status` |
-| An MCP client | for example Claude Code or Claude Desktop | |
+| An MCP client | Claude Code, Claude Desktop, or [another stdio client](docs/installation.md#other-mcp-clients) | |
 
 Codex's own sandbox must work on your computer. The bridge never turns it off. On Windows, Codex's legacy `unelevated` sandbox is not supported; use the sandbox mode Codex sets up by default (see [installation details](docs/installation.md#windows-notes)).
 
@@ -64,7 +65,7 @@ The version must be **0.167.0 or newer**. Run `codex update` to upgrade an older
 
 ### Step 3: Download Codex MCP
 
-Keep the folder in a permanent location (for example `~/tools/codex-mcp` or `C:\Tools\codex-mcp`), because your MCP client runs the server from there.
+Get the code from the [codex-mcp repository](https://github.com/houyhlouis/codex-mcp) and keep the folder in a permanent location (for example `~/tools/codex-mcp` or `C:\Tools\codex-mcp`), because your MCP client runs the server from there. The repository is public, so you don't need a GitHub account.
 
 - **Git:**
 
@@ -73,10 +74,10 @@ Keep the folder in a permanent location (for example `~/tools/codex-mcp` or `C:\
   cd codex-mcp
   ```
 
-- **GitHub Desktop:** Choose **File → Clone repository**, select `codex-mcp`, choose a local path, and click **Clone**.
-- **ZIP:** On GitHub, click **Code → Download ZIP** and extract it.
+- **GitHub Desktop:** Choose **File → Clone repository**, open the **URL** tab, enter `https://github.com/houyhlouis/codex-mcp`, choose a local path, and click **Clone**.
+- **ZIP:** On the [latest release](https://github.com/houyhlouis/codex-mcp/releases/latest) page, download **Source code (zip)** and extract it. Rename the extracted folder to `codex-mcp`.
 
-The repository is private, so you must be signed in to GitHub with access to it.
+Nothing needs to be installed after downloading: the server runs straight from this folder. If you would rather have a `codex-local-mcp` command, see [installing as a Python package](docs/installation.md#installing-as-a-python-package-optional).
 
 ### Step 4: Check that it works
 
@@ -179,11 +180,13 @@ python3 server.py review REQUEST_ID
 
 ```bash
 cd codex-mcp
-git pull
 python3 server.py stop
+git pull
 ```
 
-Then restart your MCP client. (Windows: `py -3 server.py stop`.) Always stop the broker after updating. Otherwise the client reports that a broker from a different version is still running.
+Then restart your MCP client. (Windows: `py -3 server.py stop`.) Always stop the broker before you update, so that the old broker never loads a file from the new version. Otherwise the client also reports that a broker from a different version is still running. Stop it when no task is working: a task that is interrupted by the stop keeps its project reserved until you call `codex_resume` for it.
+
+If you installed from a ZIP, run `python3 server.py stop` first, then replace the folder with the new **Source code (zip)** from [Releases](https://github.com/houyhlouis/codex-mcp/releases).
 
 **Uninstall:**
 
@@ -196,6 +199,7 @@ Then restart your MCP client. (Windows: `py -3 server.py stop`.) Always stop the
 
 | Problem | What to do |
 |---|---|
+| Anything unclear | Run `python3 server.py doctor`. It checks the installation without starting anything or using a model, and suggests a next step for each problem. See [troubleshooting](docs/troubleshooting.md#run-the-doctor-first). |
 | `Codex executable not found` | Make sure `codex --version` works in a new terminal, or set `codex_binary` to its full path in a [config file](docs/configuration.md). |
 | `codex` does not appear in `/mcp` | Check the path in your client's configuration and run the same command by hand, for example `python3 /path/to/server.py status`. |
 | A broker from a different version or configuration is running | Run `python3 server.py stop` (with the same `--config` if you use one), then retry. |
@@ -214,13 +218,15 @@ flowchart LR
 
 The MCP server that your client starts is a thin adapter. A background *broker* owns the Codex connection, stores tasks and events in a private SQLite database, and keeps running when the client disconnects. A reconnecting client can catch up from where it left off. See [architecture](docs/architecture.md) and [security](docs/security.md).
 
+The sandbox applies to the commands Codex runs, not to Codex itself: the Codex process still uses your sign-in and the network to reach the model. [Security](docs/security.md#project-boundary-and-sandbox) lists exactly what commands can read and change.
+
 ## Documentation
 
 | Guide | What it covers |
 |---|---|
 | [Installation details](docs/installation.md) | Other MCP clients, package install, Windows notes, running the broker manually |
 | [Usage guide](docs/usage.md) | The task workflow, approvals, subagents, plan mode, forks, queues, recovery |
-| [Tool reference](docs/tools.md) | All 32 tools, their arguments, task states and response formats |
+| [Tool reference](docs/tools.md) | All 34 tools, their arguments, task states and response formats |
 | [Configuration](docs/configuration.md) | Optional settings file |
 | [Troubleshooting](docs/troubleshooting.md) | Common errors and how to fix them |
 | [Security](docs/security.md) | Trust model, sandbox, approvals and stored data |
@@ -235,7 +241,7 @@ The MCP server that your client starts is a thin adapter. A background *broker* 
 python3 -m unittest discover -v
 ```
 
-The offline suite uses a simulated Codex process and uses no model quota. CI runs it on Windows, macOS and Linux with Python 3.11 and 3.14. See [docs/development.md](docs/development.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+The offline suite uses a simulated Codex process and uses no model quota. [CI](https://github.com/houyhlouis/codex-mcp/actions/workflows/tests.yml) runs it on Windows, macOS and Linux with Python 3.11 and 3.14 after every push. See [docs/development.md](docs/development.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

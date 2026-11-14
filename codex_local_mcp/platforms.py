@@ -2,7 +2,6 @@
 import asyncio
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import threading
@@ -104,42 +103,51 @@ def executable_argv(binary):
     return [sys.executable, binary] if Path(binary).suffix.lower() == ".py" else [binary]
 
 
-def find_on_path(name):
-    """Look up a command on PATH without implicitly searching the current directory.
-
-    shutil.which() on Windows always tries the current directory first, so a
-    project containing codex.exe/codex.cmd could shadow the installed CLI.
-    """
-    if not IS_WINDOWS:
-        return shutil.which(name)
-    suffixes = [""] if Path(name).suffix else [
-        ext.lower() for ext in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if ext]
-    key = next((k for k in os.environ if k.lower() == "path"), "PATH")
+def _path_directories():
+    key = next((k for k in os.environ if k.lower() == "path"), "PATH") if IS_WINDOWS else "PATH"
+    directories, ignored = [], False
     for directory in os.environ.get(key, "").split(os.pathsep):
-        directory = directory.strip().strip('"')
+        if IS_WINDOWS:
+            directory = directory.strip().strip('"')
         if not directory or not Path(directory).is_absolute():
+            ignored = True
             continue
+        directories.append(Path(directory))
+    return directories, ignored
+
+
+def find_on_path(name):
+    """Look up a command using only absolute PATH entries on every platform."""
+    suffixes = [""]
+    if IS_WINDOWS and not Path(name).suffix:
+        suffixes = [ext.lower() for ext in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if ext]
+    directories, _ = _path_directories()
+    for directory in directories:
         for suffix in suffixes:
-            candidate = Path(directory) / (name + suffix)
-            if candidate.is_file():
+            candidate = directory / (name + suffix)
+            if candidate.is_file() and (IS_WINDOWS or os.access(candidate, os.X_OK)):
                 return str(candidate)
     return None
 
 
 def resolve_codex(binary):
     candidate = Path(binary).expanduser()
-    # A bare command name such as "codex" is looked up on PATH only. Treating
-    # it as a relative path would run a file named "codex" from the MCP
-    # client's working directory (often a project checkout) instead of the
-    # installed CLI.
-    explicit_path = (candidate.is_absolute() or binary.startswith("~") or os.sep in binary
-                     or bool(os.altsep and os.altsep in binary))
+    # The broker reloads configuration from a different working directory.
+    explicit_path = candidate.is_absolute()
+    if not explicit_path and (binary.startswith("~") or candidate.drive or os.sep in binary
+                              or bool(os.altsep and os.altsep in binary)):
+        raise ValueError(f"codex_binary={binary!r} is a relative path; the broker runs from a different "
+                         "working directory. Set codex_binary to an absolute path")
     if explicit_path:
         found = str(candidate) if candidate.is_file() else None
     else:
         found = find_on_path(binary)
     if not found:
-        raise ValueError("Codex executable not found; install Codex or set codex_binary")
+        message = (f"Codex executable not found for codex_binary={binary!r}; "
+                   "install Codex or set codex_binary to an absolute path")
+        if not explicit_path and _path_directories()[1]:
+            message += ". Empty or relative PATH entries were ignored"
+        raise ValueError(message)
     path = Path(found).resolve()
     if not IS_WINDOWS or path.suffix.lower() in (".exe", ".py"):
         return str(path)
@@ -162,6 +170,27 @@ def resolve_codex(binary):
                     if native.is_file():
                         return str(native.resolve())
     raise ValueError("Set codex_binary to native codex.exe; no supported native executable was found beside the launcher")
+
+
+def path_search_provenance():
+    key = next((k for k in os.environ if k.lower() == "path"), "PATH") if IS_WINDOWS else "PATH"
+    entries = os.environ.get(key, "").split(os.pathsep)
+    entries = [entry.strip().strip('"') for entry in entries] if IS_WINDOWS else entries
+    empty = sum(not entry for entry in entries)
+    relative = sum(bool(entry) and not Path(entry).is_absolute() for entry in entries)
+    return {"ignored_path_entries": bool(empty or relative), "ignored_empty_entries": empty, "ignored_relative_entries": relative}
+
+
+def executable_provenance(binary):
+    """Describe the existing lookup policy without executing a candidate."""
+    candidate = Path(binary).expanduser()
+    explicit = candidate.is_absolute()
+    found = str(candidate) if explicit else find_on_path(binary)
+    result = {"configured": binary, "lookup": "absolute" if explicit else "absolute_PATH",
+              "path_directory": os.path.normpath(str(Path(found).parent.absolute())) if found and not explicit else None,
+              **path_search_provenance(), "resolved": None}
+    result["resolved"] = resolve_codex(binary)
+    return result
 
 
 def codex_environment(binary):

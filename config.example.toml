@@ -9,7 +9,8 @@
 #   macOS/Linux: ~/.local/state/codex-mcp   Windows: %LOCALAPPDATA%\CodexMCP
 # state_dir = "/absolute/private/state/codex-mcp"
 
-# Codex executable. A bare name is looked up on PATH only.
+# Codex program: a plain command name (searched only in the absolute folders
+# of PATH) or an absolute path. Relative paths are rejected.
 codex_binary = "codex"
 
 # Independent task families that may run at the same time (1-32).
@@ -22,6 +23,21 @@ toolchain_paths = []
 # "Approve for me" (Codex's automatic reviewer). Keep false unless you trust it.
 approval_relay = false
 
+# Linux only: before a project is freed, look for leftover Codex sandbox
+# processes in it and keep it reserved while any exist. Set to false if you
+# often use the Codex CLI yourself in a folder the server also works in.
+sandbox_process_check = true
+
+# true enables codex_worktrees, which prepares Git worktrees next to a
+# repository (needs Git 2.36 or newer). worktree_root sets another place.
+worktrees = false
+# worktree_root = "/home/me/worktrees"
+
 # true lets Codex tasks use external MCP servers/plugins from your Codex setup.
 # They run outside the project sandbox.
 allow_external_tools = false
+
+# Default budget for every new task family. Leave out for no limits.
+# [budget]
+# max_turns = 50
+# max_active_seconds = 7200

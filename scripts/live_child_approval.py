@@ -29,6 +29,11 @@ def png():
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 32, 32, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress((b"\0" + bytes([0, 0, 255]) * 32) * 32)) + chunk(b"IEND", b"")
 
 
+def check(condition, message):
+    if not condition:
+        raise RuntimeError(str(message))
+
+
 async def run():
     os.umask(0o077)
     base = Path(tempfile.mkdtemp(prefix="mcp-child-", dir=temp_root())).resolve()
@@ -43,7 +48,7 @@ async def run():
     config = load_config(str(path))
     store = Store(config.state_dir)
     service = Service(config, store)
-    report = {"config": str(path), "checks": []}
+    report = {"passed": False, "config": str(path), "checks": []}
     print("Live child approval test:", base, flush=True)
     try:
         print_command = "Write-Output CHILD_APPROVAL_TEST" if IS_WINDOWS else "printf CHILD_APPROVAL_TEST"
@@ -58,8 +63,8 @@ async def run():
             for req in page["pending_requests"]:
                 if req["kind"] != "command_approval":
                     raise RuntimeError("Unexpected request kind: " + req["kind"])
-                assert req["task_id"] != task["id"], "Expected a child-owned request"
-                assert req["root_task_id"] == task["id"]
+                check(req["task_id"] != task["id"], "Expected a child-owned request")
+                check(req["root_task_id"] == task["id"], "Child request belongs to another root")
                 choices = req["params"].get("availableDecisions", ["decline", "cancel"])
                 decision = "decline" if "decline" in choices else "cancel"
                 await service.respond(req["id"], {"decision": decision})
@@ -78,16 +83,16 @@ async def run():
                             cursor = page["cursor"]
                             if service.get(task["id"])["status"] == "interrupted":
                                 break
-                        assert service.get(task["id"])["status"] == "interrupted"
+                        check(service.get(task["id"])["status"] == "interrupted", "Parent interruption did not complete")
                         await service.send(task["id"], "The client intentionally denied the child command and cancelled the parent wait. Do not restart the child or execute the command. Based on the existing conversation, report the denied outcome, image color, and attached text marker without using tools.")
                         report["parent_wait_recovery"] = "explicit interrupt and follow-up"
             current = service.get(task["id"])
             if current["status"] in ("completed", "failed", "interrupted", "needs_resume"):
                 report["task"] = current
-                assert current["status"] == "completed", current
-                assert denied, "No native child approval request observed"
-                assert "CONTEXT_INGESTION_OK" in current["summary"], current["summary"]
-                assert "blue" in current["summary"].lower(), current["summary"]
+                check(current["status"] == "completed", current)
+                check(denied, "No native child approval request observed")
+                check("CONTEXT_INGESTION_OK" in current["summary"], current["summary"])
+                check("blue" in current["summary"].lower(), current["summary"])
                 report["checks"] = ["native child approval ownership and parent polling", "denial forwarded without approval bypass", "native image snapshot ingestion", "native context-file ingestion"]
                 report["passed"] = True
                 print("Child approval and rich-input tests passed", flush=True)
@@ -100,4 +105,5 @@ async def run():
         store.close()
 
 
-asyncio.run(run())
+if __name__ == "__main__":
+    asyncio.run(run())

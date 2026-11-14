@@ -43,7 +43,8 @@ class ProjectSelectionTest(ServiceHarness):
     async def test_configuration_has_no_workspace_requirements(self):
         config = load_config(str(self.config_file))
         self.assertFalse(hasattr(config, "roots"))
-        with patch("codex_local_mcp.config.resolve_codex", return_value=config.codex):
+        with patch("codex_local_mcp.config.resolve_codex", return_value=config.codex), patch(
+                "codex_local_mcp.config.default_state_dir", return_value=self.base / "synthetic-default-state"):
             default = load_config()
         self.assertIsNone(default.path)
         self.assertTrue(default.state_dir.is_absolute())
@@ -117,8 +118,8 @@ class PlatformTest(unittest.IsolatedAsyncioTestCase):
                 with patch.dict(os.environ, {"PATH": str(root / "missing")}):
                     with self.assertRaisesRegex(ValueError, "not found"):
                         resolve_codex("codex")
-                # An explicit relative path is still honoured.
-                self.assertEqual(resolve_codex("." + os.sep + name), str((project / name).resolve()))
+                with self.assertRaisesRegex(ValueError, "codex_binary.*absolute path"):
+                    resolve_codex("." + os.sep + name)
             finally:
                 os.chdir(previous)
 

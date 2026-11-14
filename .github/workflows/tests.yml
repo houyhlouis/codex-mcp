@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      protocol:
+        description: Run pinned Codex protocol checks and the latest canary (no inference)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,7 +41,64 @@ jobs:
         run: |
           python -m pip install .
           codex-local-mcp --version
+      - name: Public release build dependencies
+        run: python -m pip install build 'setuptools>=77.0.3' wheel
+      - name: Check public wheel and sdist
+        run: python scripts/release_check.py --require-build --require-install
       - name: Build source ZIP
         run: python scripts/build_source_zip.py
       - name: Verify source ZIP
         run: python scripts/build_source_zip.py --verify
+
+  protocol:
+    if: github.event_name == 'workflow_dispatch' && inputs.protocol
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Schema validator dependency
+        run: python -m pip install 'jsonschema>=4.19,<5'
+      - name: Install tested Codex CLI
+        run: npm install -g @openai/codex@0.167.0
+      - name: Offline compatibility and ingress tests
+        run: python -m unittest -v tests.test_contract tests.test_backend_contract tests.test_backend_backpressure tests.test_service_contract tests.test_native_wire tests.test_mcp_contract tests.test_protocol_check
+      - name: Check generated native protocol
+        run: python scripts/check_protocol.py > protocol.log 2>&1
+      - name: Report protocol result
+        if: always()
+        run: |
+          if test -f protocol.log; then
+            cat protocol.log
+            cat protocol.log >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  protocol-canary:
+    if: github.event_name == 'workflow_dispatch' && inputs.protocol
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Schema validator dependency
+        run: python -m pip install 'jsonschema>=4.19,<5'
+      - name: Install current Codex CLI
+        run: npm install -g @openai/codex@latest
+      - name: Check for native protocol drift
+        run: python scripts/check_protocol.py > protocol.log 2>&1
+      - name: Report canary result
+        if: always()
+        run: |
+          if test -f protocol.log; then
+            cat protocol.log
+            cat protocol.log >> "$GITHUB_STEP_SUMMARY"
+          fi

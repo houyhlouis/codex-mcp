@@ -1,0 +1,195 @@
+{
+  "broker_calls": [
+    {
+      "args": {
+        "action": "list",
+        "limit": 100,
+        "offset": 0
+      },
+      "method": "tool",
+      "name": "codex_projects"
+    },
+    {
+      "args": {},
+      "method": "tool",
+      "name": "codex_usage"
+    },
+    {
+      "args": {
+        "request_id": "fixture-request"
+      },
+      "method": "tool",
+      "name": "codex_review_request"
+    }
+  ],
+  "catalog_fixture": "mcp-tools.json",
+  "client_capabilities": {
+    "elicitation": {
+      "form": {}
+    }
+  },
+  "format": 1,
+  "messages": [
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "initialize",
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "params": {
+          "capabilities": {
+            "elicitation": {
+              "form": {}
+            }
+          },
+          "clientInfo": {
+            "name": "contract-test",
+            "version": "1"
+          },
+          "protocolVersion": "2024-11-05"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "initialize",
+        "jsonrpc": "2.0",
+        "result": {
+          "capabilities": {
+            "tools": {
+              "listChanged": false
+            }
+          },
+          "instructions": "Choose/create a project directory with codex_projects, then pass its\nproject_id or an existing absolute workdir to codex_start. No workspace config is\nrequired. Select supported options using codex_models. Save task ids\nand event cursors. Poll codex_events (wait_seconds up to 25) until a turn completes,\nrespond to ask_parent requests, and relay human approvals through\ncodex_review_request or the local review command. Never interpret silence as\napproval. Reuse request_id only for identical control operations. Use codex_get\nfor summaries and command evidence. On reconnect, replay from the saved cursor;\nafter a backend restart, resume and inspect history before sending more work.\nNative approve_for_me is selectable with approval_mode; it uses Codex's reviewer,\nnot approval_relay. Use codex_delegate for native delegation and codex_subagents\nto discover children; parent event polling includes their progress and requests.\nCheck family_status and child statuses before treating delegated work as done.\nRespect can_accept_direct_input on children. Use settings, fork, queue, review,\ncompact, archive and history controls for the corresponding native workflows.\nQueued instructions can be consumed immediately: inspect before editing/retrying.\n",
+          "protocolVersion": "2024-11-05",
+          "serverInfo": {
+            "name": "codex-local-mcp",
+            "version": "<bridge-version>"
+          }
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "tools",
+        "jsonrpc": "2.0",
+        "method": "tools/list",
+        "params": {}
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "tools",
+        "jsonrpc": "2.0",
+        "result": {
+          "tools": {
+            "$fixture": "mcp-tools.json",
+            "omit": [
+              "outputSchema"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "call",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "arguments": {
+            "action": "list"
+          },
+          "name": "codex_projects"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "call",
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{\"projects\": [], \"next_offset\": null, \"result_version\": 1, \"ok\": true}",
+              "type": "text"
+            }
+          ],
+          "isError": false
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "unsupported",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "arguments": {},
+          "name": "codex_usage"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "unsupported",
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{\"result_version\": 1, \"ok\": false, \"error\": {\"code\": \"optional_native_capability_unavailable\", \"message\": \"optional_native_capability_unavailable: account/rateLimits/read is unavailable in codex-cli 0.167.0. Use another supported control, or install a tested Codex version and restart the broker\", \"retryable\": false, \"uncertain\": false, \"next_steps\": [\"Use another supported control or install a tested Codex version and restart\"], \"ids\": {}, \"method\": \"account/rateLimits/read\", \"codex_version\": \"codex-cli 0.167.0\", \"next_step\": \"Use another supported control, or install a tested Codex version and restart the broker\"}}",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    },
+    {
+      "direction": "inbound",
+      "message": {
+        "id": "review",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "arguments": {
+            "request_id": "fixture-request"
+          },
+          "name": "codex_review_request"
+        }
+      }
+    },
+    {
+      "direction": "outbound",
+      "message": {
+        "id": "review",
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{\"status\": \"pending\", \"request\": {\"id\": \"fixture-request\", \"task_id\": \"fixture-task\", \"kind\": \"command_approval\", \"params\": {\"command\": \"printf fixture\", \"cwd\": \"/fixture/project\", \"availableDecisions\": [\"decline\", \"cancel\", \"accept\"]}, \"person_review_required\": false, \"review_warning\": null, \"content_bytes\": 242, \"proposal_bytes\": 2, \"preview\": \"{\\\"availableDecisions\\\":[\\\"decline\\\",\\\"cancel\\\",\\\"accept\\\"],\\\"command\\\":\\\"printf fixture\\\",\\\"cwd\\\":\\\"/fixture/project\\\"}\", \"preview_truncated\": false, \"details_truncated\": false, \"detail_tool\": \"codex_review_request\", \"pending_request_id\": \"fixture-request\", \"request_id_kind\": \"pending_request\"}, \"next_step\": \"Client has no form elicitation. Run the local review command, or relay a denial with codex_respond.\", \"pending_request_id\": \"fixture-request\", \"request_id_kind\": \"pending_request\", \"result_version\": 1, \"ok\": true}",
+              "type": "text"
+            }
+          ],
+          "isError": false
+        }
+      }
+    }
+  ],
+  "protocol_version": "2024-11-05",
+  "source": "MCP request handlers with explicit frames and a deterministic broker stub"
+}

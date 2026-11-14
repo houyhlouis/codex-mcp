@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from codex_local_mcp.security import BridgeError
-from codex_local_mcp.tools import dispatch, arguments
+from codex_local_mcp.tools import BY_NAME, dispatch, arguments
 from tests.test_service import ServiceHarness
 from tests.helpers import link_or_skip, read_fake_history
 
@@ -48,6 +48,20 @@ class ExtensionsTest(ServiceHarness):
         await self.service.settings(task["id"], "next", service_tier="priority")
         with self.assertRaises(BridgeError):
             await self.service.settings(task["id"], "next", service_tier="invented")
+
+    async def test_all_advertised_setting_enum_values_and_catalog_tiers_are_supported(self):
+        task = await self.idle()
+        properties = BY_NAME["codex_settings"]["inputSchema"]["properties"]
+        catalog = (await self.service.models())["data"]
+        default = next(model for model in catalog if model["isDefault"])
+        choices = {key: properties[key]["enum"] for key in ("approval_mode", "collaboration_mode", "access")}
+        choices["service_tier"] = ["default", *[tier["id"] for tier in default.get("serviceTiers", [])]]
+        for field, values in choices.items():
+            for index, value in enumerate(values):
+                with self.subTest(field=field, value=value):
+                    result = await dispatch(self.service, "codex_settings", {"task_id": task["id"], "scope": "next",
+                        field: value, "operation_id": f"enum-{field}-{index}"})
+                    self.assertEqual(result[field], None if field == "service_tier" and value == "default" else value)
 
     async def test_native_child_approval_reaches_parent(self):
         parent = await self.start_task("native_children")
@@ -211,6 +225,8 @@ class ExtensionsTest(ServiceHarness):
 
     async def test_scoped_native_session_discovery_and_import(self):
         task = await self.idle()
+        await self.service.resume(task["id"])
+        self.assertFalse(self.service.get(task["id"])["workspace_reserved"])
         native = await self.service.backend.call("thread/start", await self.service.thread_options(task))
         key = native["thread"]["id"]
         listing = await self.service.sessions(workdir=str(self.root / "a"))

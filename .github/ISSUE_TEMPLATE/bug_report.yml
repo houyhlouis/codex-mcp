@@ -1,0 +1,80 @@
+name: Bug report
+description: Something does not work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. Issues are public, so please check what you paste.
+
+        **Never include** passwords, tokens, API keys, Codex's `auth.json`, the state folder, the `state.sqlite3` database, or complete logs and conversations. Replace personal folder names and project content with placeholders such as `/home/me/project`.
+
+        For a security problem, do not use this form. See [SECURITY.md](https://github.com/houyhlouis/codex-mcp/blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Include the exact error message.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence of commands or tool calls that shows the problem.
+      placeholder: |
+        1. python3 server.py status
+        2. Ask the main agent to ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of the doctor command
+      description: |
+        Run `python3 server.py doctor` (Windows: `py -3 server.py doctor`) in the same environment as your MCP client and paste the output. It starts nothing and uses no model. It shows folder names from your computer, so replace anything personal first.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and version
+      placeholder: Claude Code 2.x, Claude Desktop, ...
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - WSL
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: incident
+    attributes:
+      label: Task structure (optional)
+      description: |
+        For a problem with how a task behaved, the output of `python3 server.py incident-export --task-id TASK_ID`. It contains the order of events without any prompts, paths, commands or output. Read the preview before you paste it.
+      render: json
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant log lines (optional)
+      description: Only the few lines of `broker.log` around the error. Read them before pasting.
+      render: text
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed credentials, personal paths and project content from everything above.
+          required: true
+        - label: I use the latest release, or I said above which version I use.
+          required: true

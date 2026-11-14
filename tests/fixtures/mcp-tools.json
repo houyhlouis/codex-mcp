@@ -1,0 +1,3972 @@
+{
+  "format": 1,
+  "source": "MCP tools/list result; shared by every supported revision",
+  "tools": [
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "submit: spec/key; inspect: plan_id; list: offset/limit; cancel: plan_id/key. Runs bounded dependency plans through ordinary task admission. Unknown outcomes wait for explicit resume; no side effect is retried.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "submit",
+              "inspect",
+              "list",
+              "cancel"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "plan_id": {
+            "maxLength": 64,
+            "minLength": 64,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "spec": {
+            "description": "Version 1 dependency plan; see the tools documentation.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "codex_plans",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "action": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Check installed Codex, sign-in type, pending request summaries and broker health.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "requests_cursor": {
+            "description": "Pending-request cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requests_limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_status",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "codex_version": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "os_process_check": {
+                "type": "object"
+              },
+              "pending_requests": {
+                "type": "array"
+              },
+              "state_schema_version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "codex_version",
+              "state_schema_version",
+              "pending_requests",
+              "os_process_check"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "List selected projects with offset/limit; select/create takes path. The main agent chooses an absolute project directory.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "default": "list",
+            "enum": [
+              "list",
+              "select",
+              "create"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Absolute directory to select/create",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_projects",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "properties": {
+                  "projects": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "projects"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "path"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "plan/create: repo or project_id, name, optional base; create also plan_id/key. inspect: project_id or path, offset/limit. handoff: finished task_id. cleanup: project_id, optional keep_branch, key. Except inspect, needs worktrees=true. Never merges/pushes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "plan",
+              "create",
+              "inspect",
+              "handoff",
+              "cleanup"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "base": {
+            "default": "HEAD",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "keep_branch": {
+            "default": false,
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "plan_id": {
+            "maxLength": 64,
+            "minLength": 64,
+            "type": "string"
+          },
+          "project_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "repo": {
+            "description": "Absolute repository",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "codex_worktrees",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "action": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Discover model ids, supported reasoning efforts and defaults. Catalog visibility is not an entitlement guarantee.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Native cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_models",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "data": {
+                "type": "array"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Start a persistent Codex conversation and return promptly with a task id. Poll codex_events and handle pending_requests until the turn finishes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "access": {
+            "default": "write",
+            "enum": [
+              "read",
+              "write"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "approval_mode": {
+            "default": "inherit",
+            "description": "Native Codex reviewer; approve_for_me uses auto_review without disabling sandboxing",
+            "enum": [
+              "inherit",
+              "ask",
+              "approve_for_me"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "collaboration_mode": {
+            "default": "default",
+            "enum": [
+              "default",
+              "plan"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "context_files": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "effort": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "model": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "project_id": {
+            "description": "Selected project; use instead of workdir",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "service_tier": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "workdir": {
+            "description": "Absolute project directory chosen by the main agent",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "name": "codex_start",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Page persistent tasks, newest first. Large projections identify truncated_fields.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "view": {
+            "default": "default",
+            "description": "Detail or compact supervision view",
+            "enum": [
+              "default",
+              "compact"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_list",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ok": {
+                "const": true
+              },
+              "tasks": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "tasks",
+              "next_offset"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read task state and cumulative usage. workspace_claims explain ownership; page requests, children and claims. Large fields identify truncated_fields. result pages turn evidence (pin result_id); artifact reads scoped bytes by artifact_id. Use offset/limit. reconciliation explains recovery; permissions pages receipts and scope.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "claims_limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "claims_offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limit": {
+            "maximum": 262144,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requests_cursor": {
+            "description": "Pending-request cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requests_limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "result_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "subagents_limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "subagents_offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "view": {
+            "default": "default",
+            "description": "Detail or compact supervision view",
+            "enum": [
+              "default",
+              "compact",
+              "result",
+              "artifact",
+              "reconciliation",
+              "permissions"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_get",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "budget": {
+                "type": "object"
+              },
+              "budget_stop": {
+                "anyOf": [
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "family_usage": {
+                "type": "object"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Replay progress or wait up to 25s. Drain has_more. For fragments, keep after and use event_seq/next_event_offset until complete. Page requests with requests_cursor. outcome coalesces state for task_ids (max 50); return cursors unchanged on the next poll. Detailed replay uses after separately.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cursors": {
+            "additionalProperties": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "event_offset": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "event_seq": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "include_descendants": {
+            "default": true,
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "requests_cursor": {
+            "description": "Pending-request cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requests_limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_ids": {
+            "items": {
+              "description": "Task id",
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "tasks_offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "view": {
+            "default": "default",
+            "description": "Detail or compact supervision view",
+            "enum": [
+              "default",
+              "compact",
+              "outcome"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "wait_seconds": {
+            "default": 0,
+            "maximum": 25,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_events",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "cursor": {
+                "type": "integer"
+              },
+              "events": {
+                "type": "array"
+              },
+              "has_more": {
+                "type": "boolean"
+              },
+              "ok": {
+                "const": true
+              },
+              "pending_requests": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "events",
+              "cursor",
+              "has_more",
+              "pending_requests"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Send a follow-up turn or steer active work. Steering needs the current expected_turn_id; follow-ups can select a supported model/effort.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "context_files": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "effort": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expected_turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "mode": {
+            "default": "follow_up",
+            "enum": [
+              "follow_up",
+              "steer"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "prompt": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "name": "codex_send",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Reconcile native history and execution intent after reconnect. No prompt or command replay. Inspect codex_history before a follow-up.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_resume",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Ask Codex to interrupt the specified active turn. Poll for interrupted/completed; interrupt acknowledgement alone is not completion.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "expected_turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "expected_turn_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_interrupt",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Page persisted turns or items for owned conversations, including after an outage. Large items identify truncated_fields; pending approval details come from codex_review_request.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Native cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "default": "turns",
+            "enum": [
+              "turns",
+              "items"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_history",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "data": {
+                "type": "array"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Page bounded pending approval/question summaries using cursor. Fetch complete content by id with codex_review_request before approval. Never infer approval from silence or timeout.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pending-request continuation",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_requests",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "has_more": {
+                "type": "boolean"
+              },
+              "next_cursor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ok": {
+                "const": true
+              },
+              "requests": {
+                "type": "array"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "requests",
+              "next_cursor",
+              "has_more",
+              "total"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Answer guidance or review requests. Typed decisions apply only to ask_parent. Approvals need human/relay; file accepts need proposal_hash. Denials need no human.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "pending_request_id"
+            ]
+          }
+        ],
+        "properties": {
+          "pending_request_id": {
+            "description": "Alias of request_id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "proposal_hash": {
+            "description": "Required for file_approval accept: the hash displayed with the reviewed proposal",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Pending request id, not an operation key",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "response": {
+            "additionalProperties": true,
+            "properties": {
+              "decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object"
+                  }
+                ],
+                "description": "Approval string or ask_parent object: version,id,context_hash,option_id,rationale. Guidance grants no authority."
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "type": "object"
+      },
+      "name": "codex_respond",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "request_id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Human review, or read details with offset=0. Follow next_offset and verify detail_sha256. Acceptance requires complete content.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "pending_request_id"
+            ]
+          }
+        ],
+        "properties": {
+          "limit": {
+            "default": 65536,
+            "maximum": 262144,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pending_request_id": {
+            "description": "Alias of request_id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_review_request",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "task_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "task_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "request": {
+                    "type": "object"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status",
+                  "request"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "request_id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "request_id",
+                  "status"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Discover native collaboration/permission options and direct-input capability for a task.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_capabilities",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "compatibility": {
+                "type": "object"
+              },
+              "native_methods": {
+                "type": "object"
+              },
+              "ok": {
+                "const": true
+              },
+              "os_process_check": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "native_methods",
+              "compatibility",
+              "os_process_check"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "get reads settings. next takes model/effort/approval_mode/collaboration_mode/service_tier/access and root-only family budget (applies now; {} clears). current takes model/effort/approval_mode/service_tier and expected_turn_id. Changes need an operation key.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "approval_mode": {
+            "enum": [
+              "ask",
+              "approve_for_me"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "budget": {
+            "additionalProperties": false,
+            "description": "Family lifetime limits: server turns/child admissions hard; active seconds, tokens, stored bytes soft (may overshoot). Native continuations/children may exceed admission caps. {} clears.",
+            "properties": {
+              "max_active_seconds": {
+                "maximum": 31536000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "max_children": {
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "max_output_bytes": {
+                "maximum": 1000000000000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "max_tokens": {
+                "maximum": 1000000000000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "max_turns": {
+                "maximum": 1000000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "collaboration_mode": {
+            "enum": [
+              "default",
+              "plan"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "effort": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expected_turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scope": {
+            "default": "get",
+            "enum": [
+              "get",
+              "next",
+              "current"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "service_tier": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_settings",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Page verified descendants; parent events include child requests. refresh=false uses offset; refresh=true uses cursor. Respect can_accept_direct_input.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "cursor": {
+            "description": "Native cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "refresh": {
+            "default": true,
+            "type": "boolean"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_subagents",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "nextCursor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "next_offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ok": {
+                "const": true
+              },
+              "subagents": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "subagents",
+              "nextCursor",
+              "next_offset"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Ask a parent to manage native subagents; discover them with codex_subagents. Active parents require expected_turn_id.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "contract": {
+            "description": "Version 1 guidance: version,id,goal,constraints,deliverables,verification,options,evidence,ttl_seconds (60..604800). No authority.",
+            "type": "object"
+          },
+          "expected_turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "name": "codex_delegate",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Fork an idle owned conversation, optionally through a selected turn. Keeps project boundaries; does not start work or automatically continue a goal.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "last_turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_fork",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Rename an owned native conversation.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "name": "codex_rename",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Archive or restore an idle conversation and its native descendants. Transcripts are retained.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "action": {
+            "default": "archive",
+            "enum": [
+              "archive",
+              "unarchive"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_archive",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Permanently delete an owned native conversation and descendants. Requires the exact native thread_id in confirm_thread_id and an idle family. Local bridge audit records remain.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "confirm_thread_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "confirm_thread_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_delete",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "audit_retained": {
+                "type": "boolean"
+              },
+              "deleted": {
+                "type": "boolean"
+              },
+              "ok": {
+                "const": true
+              },
+              "task_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "task_id",
+              "deleted",
+              "audit_retained"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Request native history compaction for an idle conversation; may consume model usage. Poll completion events.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_compact",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Remove a selected turn and all later native conversation history. DOES NOT revert files. Requires explicit acknowledgement; local event audit remains.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "before_turn_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "confirm_history_only": {
+            "type": "boolean"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "before_turn_id",
+          "confirm_history_only"
+        ],
+        "type": "object"
+      },
+      "name": "codex_revert",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "files_changed": {
+                "type": "boolean"
+              },
+              "history": {
+                "type": "object"
+              },
+              "ok": {
+                "const": true
+              },
+              "task_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "task_id",
+              "history",
+              "files_changed"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "list takes cursor/limit; add takes prompt and optional images/context_files/skills; update also needs queued_id; delete needs queued_id; reorder needs ordered_ids; start takes optional queued_id. Mutations need an operation key.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "default": "list",
+            "enum": [
+              "list",
+              "add",
+              "update",
+              "delete",
+              "reorder",
+              "start"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "context_files": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "cursor": {
+            "description": "Native cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ordered_ids": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "prompt": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "queued_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "maxLength": 100000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_queue",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Start native code review of uncommitted changes, a base branch, a commit or custom instructions on an idle task. Poll for findings/results.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "request_id"
+            ]
+          },
+          {
+            "required": [
+              "operation_id"
+            ]
+          }
+        ],
+        "properties": {
+          "branch": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "commit": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "instructions": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target": {
+            "default": "uncommittedChanges",
+            "enum": [
+              "uncommittedChanges",
+              "baseBranch",
+              "commit",
+              "custom"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_review",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "const": true
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "list takes cursor/limit; terminate takes process_id; clean stops all background terminals. Mutations need an operation key. No arbitrary shell or stdin.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "default": "list",
+            "enum": [
+              "list",
+              "terminate",
+              "clean"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Native cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "process_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_terminals",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "get reads a goal; set takes objective/status/token_budget; clear removes it. Mutations need user_requested=true and an operation key. Only change goals on explicit human instruction.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "default": "get",
+            "enum": [
+              "get",
+              "set",
+              "clear"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "objective": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "blocked",
+              "complete"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "token_budget": {
+            "maximum": 10000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "user_requested": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_goal",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "List native skills available for this project. Select enabled skills by name in start/send; no global skill configuration changes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "force_reload": {
+            "default": false,
+            "type": "boolean"
+          },
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_skills",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "data": {
+                "type": "array"
+              },
+              "ok": {
+                "const": true
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Retrieve the current native turn's diff and reported file changes; old diffs are not carried into new turns. Does not invoke Git hooks or execute a shell.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "description": "Task id",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "name": "codex_diff",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "diff": {
+                "type": "string"
+              },
+              "files": {
+                "type": "array"
+              },
+              "ok": {
+                "const": true
+              },
+              "task_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "task_id",
+              "turn_id",
+              "diff",
+              "files"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read native account rate limits/remaining allowance. Does not buy credits or change billing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_usage",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      },
+      "description": "Choose workdir or project_id. list takes cursor/limit/archived; import takes thread_id, confirm_stopped=true, optional archived and an operation key. Native scope is verified before work.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "default": "list",
+            "enum": [
+              "list",
+              "import"
+            ],
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "archived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "confirm_stopped": {
+            "default": false,
+            "type": "boolean"
+          },
+          "cursor": {
+            "description": "Native cursor",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operation_id": {
+            "description": "Alias of request_id",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "project_id": {
+            "description": "Selected project; use instead of workdir",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Key for identical retries",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workdir": {
+            "description": "Absolute project directory chosen by the main agent",
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "codex_sessions",
+      "outputSchema": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "status"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "nextCursor": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sessions": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "sessions",
+                  "nextCursor"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "ok": {
+                "const": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "result_version": {
+            "const": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_version",
+          "ok"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

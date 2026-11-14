@@ -6,6 +6,7 @@ process identities. JSON bytes are used throughout; no pickle deserialization.
 import asyncio
 import ctypes
 import functools
+import json
 import os
 import stat
 import threading
@@ -22,6 +23,183 @@ TRUSTED_SIDS = {"S-1-5-18", "S-1-5-32-544", "S-1-3-0"}
 SYNCHRONIZE, PROCESS_QUERY_LIMITED_INFORMATION = 0x00100000, 0x1000
 WAIT_TIMEOUT = 0x102
 ERROR_ACCESS_DENIED, ERROR_NO_DATA, ERROR_PIPE_CONNECTED = 5, 232, 535
+ERROR_IO_PENDING, ERROR_IO_INCOMPLETE, ERROR_OPERATION_ABORTED, ERROR_NOT_FOUND = 997, 996, 995, 1168
+FILE_FLAG_OVERLAPPED = 0x40000000
+PIPE_WORKERS, PIPE_CLIENTS, PIPE_IO_LIMIT = 32, 32, 128
+WRITE_TIMEOUT, ACK_TIMEOUT, CANCEL_GRACE, SHUTDOWN_GRACE = 5.0, 3.0, 1.0, 1.0
+POLL_INTERVAL = 0.02
+
+
+class AdmissionExhausted(ConnectionError):
+    pass
+
+
+class Overlapped(ctypes.Structure):
+    _fields_ = [("Internal", ctypes.c_size_t), ("InternalHigh", ctypes.c_size_t),
+                ("Offset", w.DWORD), ("OffsetHigh", w.DWORD), ("hEvent", w.HANDLE)]
+
+
+class AdmissionBudget:
+    """Nonblocking admission; tokens are released exactly once by their owner."""
+    def __init__(self, limit, message):
+        if type(limit) is not int or not 1 <= limit <= 252:
+            raise ValueError("Named-pipe budget must be between 1 and 252")
+        self.limit, self.message, self.active = limit, message, 0
+        self.lock = threading.Lock()
+
+    def acquire(self):
+        with self.lock:
+            if self.active >= self.limit:
+                raise AdmissionExhausted(self.message)
+            self.active += 1
+        released = False
+        def release():
+            nonlocal released
+            with self.lock:
+                if released:
+                    raise RuntimeError("Named-pipe admission released twice")
+                released = True
+                self.active -= 1
+        return release
+
+
+CLIENT_BUDGET = AdmissionBudget(PIPE_CLIENTS, "Local named-pipe client budget exhausted; retry after active clients finish")
+IO_BUDGET = AdmissionBudget(PIPE_IO_LIMIT, "Local named-pipe I/O budget exhausted; retry after pending cancellations finish")
+
+
+class OwnedPipe:
+    def __init__(self, raw, close=None):
+        self.raw, self._close = raw, close or api().kernel.CloseHandle
+        self.closed = False
+
+    def close(self):
+        if not self.closed:
+            self.closed = True
+            self._close(self.raw)
+
+
+def wait_io(operation, timeout, cancelled=None, *, phase="operation", clock=time.monotonic):
+    """Plain Python deadline/cancellation state machine; operations own buffers."""
+    deadline = clock() + timeout if timeout is not None else None
+    try:
+        while True:
+            reason = (ConnectionAbortedError("Local named-pipe operation cancelled") if cancelled and cancelled.is_set()
+                      else TimeoutError(f"Local named-pipe {phase} deadline exceeded") if deadline is not None and clock() >= deadline
+                      else None)
+            if reason:
+                operation.cancel()
+                drain_deadline = clock() + CANCEL_GRACE
+                while clock() < drain_deadline:
+                    try:
+                        if operation.poll() is not None:
+                            break
+                    except OSError:
+                        break
+                    operation.wait(min(POLL_INTERVAL, max(0, drain_deadline - clock())))
+                if not operation.done:
+                    operation.abandon()
+                raise reason
+            result = operation.poll()
+            if result is not None:
+                return result
+            operation.wait(POLL_INTERVAL if deadline is None else min(POLL_INTERVAL, max(0, deadline - clock())))
+    finally:
+        if operation.abandoned:
+            pass  # The completion reaper owns the event, buffer and I/O token.
+        elif operation.done:
+            operation.close()
+        else:
+            try:
+                operation.cancel()
+            finally:
+                operation.abandon()
+
+
+_PENDING, _PENDING_LOCK = set(), threading.Lock()
+
+
+def _retain_cancelled(operation):
+    # Close the pipe to release its instance, but never free an in-flight
+    # OVERLAPPED/buffer. The bounded I/O token stays held until completion.
+    operation.pipe.close()
+    with _PENDING_LOCK:
+        _PENDING.add(operation)
+
+    def reap():
+        while api().kernel.WaitForSingleObject(operation.overlapped.hEvent, 100) != 0:
+            time.sleep(POLL_INTERVAL)
+        operation.done = True
+        operation.close()
+        with _PENDING_LOCK:
+            _PENDING.discard(operation)
+
+    threading.Thread(target=reap, daemon=True, name="mcp-pipe-cancel").start()
+
+
+class NativeOperation:
+    def __init__(self, pipe, kind, data=None, size=65536):
+        self.pipe, self.done, self.abandoned = pipe, False, False
+        self.release = IO_BUDGET.acquire()
+        self.overlapped, self.buffer, self.result = Overlapped(), None, None
+        try:
+            self.overlapped.hEvent = api().handle(api().kernel.CreateEventW(None, True, False, None))
+            self.kind = kind
+            if kind == "connect":
+                ok = api().kernel.ConnectNamedPipe(pipe.raw, ctypes.byref(self.overlapped))
+            else:
+                self.buffer = ctypes.create_string_buffer(data, len(data)) if kind == "write" else ctypes.create_string_buffer(size)
+                call = api().kernel.WriteFile if kind == "write" else api().kernel.ReadFile
+                ok = call(pipe.raw, self.buffer, len(self.buffer), None, ctypes.byref(self.overlapped))
+            error = 0 if ok else ctypes.get_last_error()
+            if kind == "connect" and (ok or error == ERROR_PIPE_CONNECTED):
+                self.done, self.result = True, 0
+            elif ok:
+                self.poll()
+            elif error != ERROR_IO_PENDING:
+                raise ctypes.WinError(error)
+        except BaseException:
+            self.done = True
+            self.close()
+            raise
+
+    def _result(self, count):
+        return self.buffer.raw[:count] if self.kind == "read" else count
+
+    def poll(self):
+        if self.done:
+            return self.result
+        count = w.DWORD()
+        if api().kernel.GetOverlappedResult(self.pipe.raw, ctypes.byref(self.overlapped), ctypes.byref(count), False):
+            self.done, self.result = True, self._result(count.value)
+            return self.result
+        error = ctypes.get_last_error()
+        if error == ERROR_IO_INCOMPLETE:
+            return None
+        self.done = True
+        raise ctypes.WinError(error)
+
+    def wait(self, seconds):
+        result = api().kernel.WaitForSingleObject(self.overlapped.hEvent, max(1, int(seconds * 1000)))
+        if result not in (0, WAIT_TIMEOUT):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def cancel(self):
+        if not self.done and not api().kernel.CancelIoEx(self.pipe.raw, ctypes.byref(self.overlapped)):
+            if ctypes.get_last_error() != ERROR_NOT_FOUND:
+                raise ctypes.WinError(ctypes.get_last_error())
+
+    def abandon(self):
+        if not self.abandoned:
+            self.abandoned = True
+            _retain_cancelled(self)
+
+    def close(self):
+        if self.overlapped.hEvent:
+            api().kernel.CloseHandle(self.overlapped.hEvent)
+            self.overlapped.hEvent = None
+        if self.release:
+            self.release()
+            self.release = None
 
 
 class SecurityAttributes(ctypes.Structure):
@@ -50,6 +228,9 @@ class API:
         self.bind(self.kernel, "GetCurrentProcess", [], w.HANDLE)
         self.bind(self.kernel, "OpenProcess", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE)
         self.bind(self.kernel, "WaitForSingleObject", [w.HANDLE, w.DWORD], w.DWORD)
+        self.bind(self.kernel, "CreateEventW", [ctypes.POINTER(SecurityAttributes), w.BOOL, w.BOOL, w.LPCWSTR], w.HANDLE)
+        self.bind(self.kernel, "CancelIoEx", [w.HANDLE, ctypes.POINTER(Overlapped)], w.BOOL)
+        self.bind(self.kernel, "GetOverlappedResult", [w.HANDLE, ctypes.POINTER(Overlapped), ctypes.POINTER(w.DWORD), w.BOOL], w.BOOL)
         self.bind(self.advapi, "OpenProcessToken", [w.HANDLE, w.DWORD, ctypes.POINTER(w.HANDLE)], w.BOOL)
         self.bind(self.advapi, "GetTokenInformation", [w.HANDLE, ctypes.c_int, ptr, w.DWORD, ctypes.POINTER(w.DWORD)], w.BOOL)
         self.bind(self.advapi, "IsTokenRestricted", [w.HANDLE], w.BOOL)
@@ -305,20 +486,24 @@ def verify_peer(handle, server=False):
         raise PermissionError("Named-pipe peer belongs to another Windows account")
 
 
+def io_remaining(deadline, cancelled, phase):
+    if cancelled and cancelled.is_set():
+        raise ConnectionAbortedError("Local named-pipe operation cancelled")
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError(f"Local named-pipe {phase} deadline exceeded")
+    return remaining
+
+
 def read_line(handle, maximum, timeout, cancelled=None):
-    a, deadline, data = api(), time.monotonic() + timeout, bytearray()
-    while time.monotonic() < deadline:
-        if cancelled and cancelled.is_set():
-            raise ConnectionAbortedError("Pipe operation cancelled")
-        available = w.DWORD()
-        a.check(a.kernel.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None))
-        if not available.value:
-            time.sleep(0.01)
-            continue
-        buffer = ctypes.create_string_buffer(min(available.value, 65536, maximum + 1 - len(data)))
-        count = w.DWORD()
-        a.check(a.kernel.ReadFile(handle, buffer, len(buffer), ctypes.byref(count), None))
-        data.extend(buffer.raw[:count.value])
+    deadline, data = time.monotonic() + timeout, bytearray()
+    while True:
+        remaining = io_remaining(deadline, cancelled, "read")
+        part = wait_io(NativeOperation(handle, "read", size=min(65536, maximum + 1 - len(data))),
+                       remaining, cancelled, phase="read")
+        if not part:
+            raise BrokenPipeError("Local named-pipe peer disconnected")
+        data.extend(part)
         if len(data) > maximum:
             raise ValueError("Named-pipe frame exceeds size limit")
         if b"\n" in data:
@@ -326,42 +511,46 @@ def read_line(handle, maximum, timeout, cancelled=None):
             if extra.strip():
                 raise ValueError("Only one request per pipe connection is accepted")
             return line
-    raise TimeoutError("Local named-pipe operation timed out")
 
 
-def write_line(handle, payload):
-    data = payload + b"\n"
-    sent = 0
+def write_line(handle, payload, timeout=WRITE_TIMEOUT, cancelled=None, *, phase="write"):
+    data, sent, deadline = payload + b"\n", 0, time.monotonic() + timeout
     while sent < len(data):
+        remaining = io_remaining(deadline, cancelled, phase)
         part = data[sent:sent + 65536]
-        count = w.DWORD()
-        api().check(api().kernel.WriteFile(handle, ctypes.c_char_p(part), len(part), ctypes.byref(count), None))
-        if not count.value:
+        count = wait_io(NativeOperation(handle, "write", data=part), remaining,
+                        cancelled, phase=phase)
+        if not count:
             raise BrokenPipeError("Pipe write made no progress")
-        sent += count.value
+        sent += count
 
 
-def connect_pipe(address, timeout=2):
+def connect_pipe(address, timeout=2, cancelled=None):
     a, deadline = api(), time.monotonic() + timeout
     while True:
-        handle = a.kernel.CreateFileW(address, GENERIC_READ | GENERIC_WRITE, 0, None, 3, 0, None)
+        if cancelled and cancelled.is_set():
+            raise ConnectionAbortedError("Local named-pipe operation cancelled")
+        handle = a.kernel.CreateFileW(address, GENERIC_READ | GENERIC_WRITE, 0, None, 3, FILE_FLAG_OVERLAPPED, None)
         if handle not in (None, 0, INVALID_HANDLE):
             try:
                 verify_peer(handle, server=True)
                 return handle
-            except Exception:
+            except BaseException:
                 a.kernel.CloseHandle(handle)
                 raise
         error = ctypes.get_last_error()
         if error in (2, 3):
             raise FileNotFoundError("Local broker pipe is not running")
-        if error != 231 or time.monotonic() >= deadline:
+        if error != 231:
             raise ctypes.WinError(error)
-        a.kernel.WaitNamedPipeW(address, 100)
+        if time.monotonic() >= deadline:
+            raise ConnectionError("Local named-pipe admission budget exhausted or broker busy; retry after active clients finish")
+        a.kernel.WaitNamedPipeW(address, 20)
 
 
 async def exchange(address, payload, maximum, timeout):
-    loop, cancelled = asyncio.get_running_loop(), threading.Event()
+    release = CLIENT_BUDGET.acquire()
+    loop, cancelled, finished = asyncio.get_running_loop(), threading.Event(), threading.Event()
     future = loop.create_future()
 
     def finish(result=None, error=None):
@@ -370,114 +559,176 @@ async def exchange(address, payload, maximum, timeout):
 
     def work():
         handle = None
+        deadline = time.monotonic() + timeout
         try:
-            handle = connect_pipe(address)
-            write_line(handle, payload)
-            result = read_line(handle, maximum, timeout, cancelled)
-            write_line(handle, b"ACK")
+            handle = OwnedPipe(connect_pipe(address, min(2, timeout), cancelled))
+            write_line(handle, payload, min(WRITE_TIMEOUT, max(0, deadline - time.monotonic())), cancelled)
+            result = read_line(handle, maximum, max(0, deadline - time.monotonic()), cancelled)
+            write_line(handle, b"ACK", min(ACK_TIMEOUT, max(0, deadline - time.monotonic())), cancelled, phase="ACK")
             if not loop.is_closed():
                 loop.call_soon_threadsafe(finish, result)
-        except Exception as exc:
+        except BaseException as exc:
             if not loop.is_closed():
                 loop.call_soon_threadsafe(finish, None, exc)
         finally:
             if handle is not None:
-                api().kernel.CloseHandle(handle)
+                handle.close()
+            release()
+            finished.set()
 
-    threading.Thread(target=work, daemon=True, name="mcp-pipe-client").start()
     try:
-        return await asyncio.wait_for(future, timeout + 3)
+        threading.Thread(target=work, daemon=True, name="mcp-pipe-client").start()
+    except BaseException:
+        release()
+        raise
+    try:
+        return await asyncio.wait_for(future, timeout + CANCEL_GRACE + 1)
     finally:
         cancelled.set()
+        deadline = time.monotonic() + CANCEL_GRACE + 1
+        while not finished.is_set() and time.monotonic() < deadline:
+            await asyncio.sleep(POLL_INTERVAL)
+        if not finished.is_set():
+            raise TimeoutError("Local named-pipe client cancellation did not complete")
 
 
 class PipeServer:
-    def __init__(self, address, handler, maximum):
+    def __init__(self, address, handler, maximum, *, worker_limit=PIPE_WORKERS, write_timeout=WRITE_TIMEOUT):
         self.address, self.handler, self.maximum = address, handler, maximum
+        self.write_timeout = write_timeout
+        self.budget = AdmissionBudget(worker_limit, "Local named-pipe worker budget exhausted; retry after active clients finish")
+        self.reject_budget = AdmissionBudget(1, self.budget.message)
         self.loop = asyncio.get_running_loop()
-        self.stopped = threading.Event()
-        self.workers = set()
-        self.workers_lock = threading.Lock()
+        self.stopped, self.cancelled = threading.Event(), threading.Event()
+        self.workers, self.workers_lock = set(), threading.Lock()
         api().process_sid(require_unrestricted=True)
         self.listener = self.make_pipe(first=True)
         self.thread = threading.Thread(target=self.accept, daemon=True, name="mcp-pipe-listener")
 
     def make_pipe(self, first=False):
         with api().descriptor() as attributes:
-            # PIPE_REJECT_REMOTE_CLIENTS is mandatory. This is never an SMB or
-            # TCP transport. FIRST_PIPE_INSTANCE rejects a pre-existing owner.
-            return api().handle(api().kernel.CreateNamedPipeW(self.address, 3 | (0x80000 if first else 0),
-                0x8, 255, 65536, 65536, 1000, ctypes.byref(attributes)))
+            # Security remains local, owner-restricted and first-instance fenced.
+            raw = api().handle(api().kernel.CreateNamedPipeW(self.address,
+                3 | FILE_FLAG_OVERLAPPED | (0x80000 if first else 0), 0x8,
+                self.budget.limit + 2, 65536, 65536, 1000, ctypes.byref(attributes)))
+            return OwnedPipe(raw)
 
     def start(self):
-        self.thread.start()
+        try:
+            self.thread.start()
+        except BaseException:
+            self.listener.close()
+            raise
 
     def accept(self):
         handle = self.listener
         try:
             while not self.stopped.is_set():
-                if not api().kernel.ConnectNamedPipe(handle, None):
-                    error = ctypes.get_last_error()
-                    if error == ERROR_NO_DATA:
-                        # The client connected and left before it was accepted
-                        # (for example a cancelled or killed caller). Reset this
-                        # instance and keep listening instead of going deaf.
-                        api().kernel.DisconnectNamedPipe(handle)
-                        continue
-                    if error != ERROR_PIPE_CONNECTED:
+                try:
+                    wait_io(NativeOperation(handle, "connect"), None, self.stopped, phase="connect")
+                except AdmissionExhausted:
+                    # A cancellation reaper may temporarily own every I/O slot.
+                    # Keep the listener alive until a slot is released or stopped.
+                    self.stopped.wait(POLL_INTERVAL)
+                    continue
+                except OSError as exc:
+                    if self.stopped.is_set():
                         return
+                    if getattr(exc, "winerror", None) in (ERROR_NO_DATA, 109, ERROR_OPERATION_ABORTED):
+                        api().kernel.DisconnectNamedPipe(handle.raw)
+                        continue
+                    if isinstance(exc, PermissionError):
+                        api().kernel.DisconnectNamedPipe(handle.raw)
+                        continue
+                    return
                 if self.stopped.is_set():
                     return
                 try:
-                    verify_peer(handle)
-                except Exception:
-                    api().kernel.DisconnectNamedPipe(handle)
+                    verify_peer(handle.raw)
+                except OSError:
+                    # A client may exit between accept and identity lookup.
+                    api().kernel.DisconnectNamedPipe(handle.raw)
                     continue
+                rejected = False
+                try:
+                    release = self.budget.acquire()
+                except ConnectionError:
+                    rejected = True
+                    try:
+                        release = self.reject_budget.acquire()
+                    except ConnectionError:
+                        api().kernel.DisconnectNamedPipe(handle.raw)
+                        continue
                 try:
                     next_handle = self.make_pipe()
                 except OSError:
-                    # Out of pipe instances/resources: drop this caller and retry.
-                    api().kernel.DisconnectNamedPipe(handle)
-                    time.sleep(0.1)
+                    release()
+                    api().kernel.DisconnectNamedPipe(handle.raw)
                     continue
-                worker = threading.Thread(target=self.serve, args=(handle,), daemon=True, name="mcp-pipe-request")
+                worker = threading.Thread(target=self.serve, args=(handle, release, rejected), daemon=True, name="mcp-pipe-request")
                 with self.workers_lock:
                     self.workers.add(worker)
-                worker.start()
+                try:
+                    worker.start()
+                except BaseException:
+                    with self.workers_lock:
+                        self.workers.discard(worker)
+                    release()
+                    next_handle.close()
+                    raise
                 handle = self.listener = next_handle
         finally:
-            # Exactly one close of the instance this thread still owns.
-            api().kernel.CloseHandle(handle)
+            handle.close()
 
-    def serve(self, handle):
+    def serve(self, handle, release, rejected=False):
+        future = None
         try:
-            request = read_line(handle, self.maximum, 10, self.stopped)
-            result = asyncio.run_coroutine_threadsafe(self.handler(request), self.loop).result(timeout=120)
-            write_line(handle, result)
-            # DisconnectNamedPipe discards unread bytes. Wait for the client's
-            # acknowledgement even during a graceful broker stop.
-            read_line(handle, 16, 3)
+            request = read_line(handle, self.maximum, 2 if rejected else 10, self.cancelled)
+            if rejected:
+                result = json.dumps({"error": {"code": "pipe_budget_exhausted", "message": self.budget.message}}).encode()
+            else:
+                future = asyncio.run_coroutine_threadsafe(self.handler(request), self.loop)
+                deadline = time.monotonic() + 120
+                while True:
+                    if self.cancelled.is_set():
+                        raise ConnectionAbortedError("Local named-pipe operation cancelled")
+                    try:
+                        result = future.result(timeout=POLL_INTERVAL)
+                        break
+                    except TimeoutError:
+                        if future.done():
+                            raise
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("Local named-pipe handler deadline exceeded")
+            write_line(handle, result, self.write_timeout, self.cancelled)
+            if read_line(handle, 16, ACK_TIMEOUT, self.cancelled) != b"ACK":
+                raise ValueError("Local named-pipe acknowledgement is invalid")
         except Exception:
             pass
         finally:
-            api().kernel.DisconnectNamedPipe(handle)
-            api().kernel.CloseHandle(handle)
+            if future is not None and not future.done():
+                future.cancel()
+            if not handle.closed:
+                api().kernel.DisconnectNamedPipe(handle.raw)
+            handle.close()
+            release()
             with self.workers_lock:
                 self.workers.discard(threading.current_thread())
 
     def close(self):
         self.stopped.set()
-        try:
-            handle = connect_pipe(self.address, timeout=0.5)
-            api().kernel.CloseHandle(handle)
-        except OSError:
-            pass
+        if self.thread.ident is None:
+            self.listener.close()
 
     async def wait_closed(self):
-        deadline = time.monotonic() + 4
-        while time.monotonic() < deadline:
+        started = time.monotonic()
+        while time.monotonic() - started < SHUTDOWN_GRACE + CANCEL_GRACE + 1:
+            if time.monotonic() - started >= SHUTDOWN_GRACE:
+                self.cancelled.set()
             with self.workers_lock:
                 busy = bool(self.workers)
             if not busy and not self.thread.is_alive():
                 return
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(POLL_INTERVAL)
+        self.cancelled.set()
+        raise TimeoutError("Local named-pipe shutdown did not complete")

@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [limitations](https://github.com/houyhlouis/codex-mcp/blob/main/docs/limitations.md) first. Some things are left out on purpose: a network listener, raw Codex access, an unrestricted shell, and approving on a person's behalf by default.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the task or workflow, not only the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead? (optional)
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and operating system (optional)

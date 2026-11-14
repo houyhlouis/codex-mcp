@@ -4,13 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-local-mcp"
-version = "0.1.1"
+version = "0.2.0"
 description = "Local persistent Codex subagents over MCP, with durable events and human approvals"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = []
+keywords = ["mcp", "codex", "subagents", "local", "approvals", "sqlite"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development",
+]
+
+[project.urls]
+Repository = "https://github.com/houyhlouis/codex-mcp"
+Issues = "https://github.com/houyhlouis/codex-mcp/issues"
+Changelog = "https://github.com/houyhlouis/codex-mcp/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/houyhlouis/codex-mcp/tree/main/docs"
 
 [project.scripts]
 codex-local-mcp = "codex_local_mcp.cli:main"

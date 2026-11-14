@@ -1,0 +1,193 @@
+{
+  "bridge_version": "0.2.0",
+  "content_omitted": true,
+  "events": [
+    {
+      "data": {
+        "project": {
+          "$omitted": {
+            "length": 16,
+            "type": "string"
+          }
+        }
+      },
+      "kind": "bridge/task_created",
+      "order": 0,
+      "task": "ref-0001"
+    },
+    {
+      "data": {
+        "text": {
+          "$omitted": {
+            "length": 21,
+            "type": "string"
+          }
+        }
+      },
+      "kind": "bridge/input",
+      "order": 1,
+      "task": "ref-0001"
+    },
+    {
+      "data": {
+        "threadId": "ref-0002",
+        "turn": {
+          "id": "ref-0003",
+          "items": [],
+          "status": "inProgress"
+        },
+        "turnId": "ref-0003"
+      },
+      "kind": "turn/started",
+      "order": 2,
+      "task": "ref-0001"
+    },
+    {
+      "data": {
+        "blocking": true,
+        "generation": {
+          "$reference": "ref-0006",
+          "type": "integer"
+        },
+        "id": "ref-0005",
+        "kind": "command_approval",
+        "method": "item/commandExecution/requestApproval",
+        "params": {
+          "command": {
+            "$omitted": {
+              "length": 22,
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "$omitted": {
+              "length": 16,
+              "type": "string"
+            }
+          },
+          "itemId": "ref-0008",
+          "startedAtMs": {
+            "$omitted": {
+              "length": 1,
+              "type": "integer"
+            }
+          },
+          "threadId": "ref-0002",
+          "turnId": "ref-0003"
+        },
+        "requires_human": true,
+        "rpc_id": {
+          "$reference": "ref-0007",
+          "type": "integer"
+        },
+        "status": "pending",
+        "task_id": "ref-0001"
+      },
+      "kind": "bridge/request",
+      "order": 3,
+      "task": "ref-0001"
+    }
+  ],
+  "format": 1,
+  "partial": false,
+  "purpose": "codex-local-mcp structural incident; fake harness only",
+  "replay": {
+    "consumer": "deterministic-fake-only",
+    "injections": [
+      {
+        "action": "crash",
+        "at": 4
+      }
+    ]
+  },
+  "requests": [
+    {
+      "blocking": true,
+      "generation": {
+        "$reference": "ref-0006",
+        "type": "integer"
+      },
+      "id": "ref-0005",
+      "kind": "command_approval",
+      "method": "item/commandExecution/requestApproval",
+      "params": {
+        "command": {
+          "$omitted": {
+            "length": 22,
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "$omitted": {
+            "length": 16,
+            "type": "string"
+          }
+        },
+        "itemId": "ref-0008",
+        "startedAtMs": {
+          "$omitted": {
+            "length": 1,
+            "type": "integer"
+          }
+        },
+        "threadId": "ref-0002",
+        "turnId": "ref-0003"
+      },
+      "requires_human": true,
+      "revision": {
+        "$omitted": {
+          "length": 1,
+          "type": "integer"
+        }
+      },
+      "rpc_id": {
+        "$reference": "ref-0007",
+        "type": "integer"
+      },
+      "status": "pending",
+      "task_id": "ref-0001"
+    }
+  ],
+  "schema_version": 11,
+  "tasks": [
+    {
+      "created_at": {
+        "$omitted": {
+          "length": 1,
+          "type": "integer"
+        }
+      },
+      "evidence_complete": true,
+      "evidence_gaps": [],
+      "id": "ref-0001",
+      "project": {
+        "$omitted": {
+          "length": 16,
+          "type": "string"
+        }
+      },
+      "project_id": "ref-0004",
+      "revision": {
+        "$omitted": {
+          "length": 1,
+          "type": "integer"
+        }
+      },
+      "status": "waiting",
+      "summary": {
+        "$omitted": {
+          "length": 21,
+          "type": "string"
+        }
+      },
+      "thread_id": "ref-0002",
+      "turn_id": "ref-0003",
+      "updated_at": {
+        "$omitted": {
+          "length": 1,
+          "type": "integer"
+        }
+      }
+    }
+  ]
+}

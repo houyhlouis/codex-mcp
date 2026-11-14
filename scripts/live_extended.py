@@ -23,6 +23,11 @@ from codex_local_mcp.security import private_dir
 from codex_local_mcp.platforms import IS_WINDOWS
 
 
+def check(condition, message):
+    if not condition:
+        raise RuntimeError(str(message))
+
+
 async def run():
     os.umask(0o077)
     base = Path(tempfile.mkdtemp(prefix="mcp-native-", dir=temp_root())).resolve()
@@ -34,7 +39,7 @@ async def run():
     cfg = load_config(str(file))
     store = Store(cfg.state_dir)
     service = Service(cfg, store)
-    report = {"checks": [], "config": str(file)}
+    report = {"passed": False, "checks": [], "config": str(file)}
     print("Live test directory:", base, flush=True)
 
     async def done(task_id, seconds=180):
@@ -65,9 +70,9 @@ async def run():
             "prompt": "Controlled integration test. Spawn exactly one native Codex subagent. Ask it to count ordinary files in the current project, without editing anything, networking, or requesting extra permissions. Wait for its answer and report the count. Actually use your native subagent tool; do not merely describe delegation."})
         report["root_task"] = await done(task["id"])
         children = await service.subagents(task["id"])
-        assert children["subagents"], "No verified native subagent was discovered"
+        check(children["subagents"], "No verified native subagent was discovered")
         report["children"] = children
-        assert report["root_task"]["approvals_reviewer"] == "auto_review"
+        check(report["root_task"]["approvals_reviewer"] == "auto_review", "Native automatic reviewer was not selected")
         report["checks"].extend(["native subagent discovery/subscription", "child results and parent event aggregation", "native auto_review selection"])
         print("Native subagent check passed", flush=True)
 
@@ -75,7 +80,7 @@ async def run():
         await service.send(task["id"], f"Controlled automatic-review test. Use the command tool with sandbox_permissions=require_escalated to run exactly: {print_command}. This intentionally tests the native reviewer with a harmless print. Do not edit files, use networking or delegate. If the reviewer denies the request, report the denial and stop; do not work around it.")
         reviewed = await done(task["id"])
         report["automatic_review"] = reviewed.get("last_automatic_review")
-        assert report["automatic_review"], "No native automatic-review event observed"
+        check(report["automatic_review"], "No native automatic-review event observed")
         report["checks"].append("native automatic reviewer event/result")
 
         await service.settings(task["id"], "next", approval_mode="ask", collaboration_mode="plan")
@@ -97,8 +102,31 @@ async def run():
                     raise
         await done(fork["id"])
         report["checks"].extend(["native fork and rename", "native queue add/list and consumption"])
+        if "--characterize-goal-continuation" in sys.argv:
+            print("Opt-in goal timing check uses REAL MODEL QUOTA (2000-token goal budget).", flush=True)
+            observations, started = [], time.monotonic()
+            cursor = store.highwater()
+            try:
+                await service.goal(fork["id"], "set", objective=(
+                    "Controlled goal timing check. Reply GOAL_TIMING_OK and complete this goal. "
+                    "Do not use tools, edit files, delegate, or access the network."),
+                    status="active", token_budget=2000, user_requested=True)
+                while time.monotonic() - started < 30:
+                    page = await service.events(task_id=fork["id"], after=cursor, wait_seconds=1)
+                    cursor = page["cursor"]
+                    observations.extend({"elapsed": time.monotonic() - started,
+                        "kind": e["kind"], "turn_id": e["data"].get("turnId") or e["data"].get("turn", {}).get("id")}
+                        for e in page["events"] if e["kind"] in ("turn/started", "turn/completed"))
+                    observed_goal = (await service.goal(fork["id"]))["goal"]
+                    if observed_goal is None or observed_goal.get("status") != "active":
+                        break
+            finally:
+                await service.goal(fork["id"], "clear", user_requested=True)
+                report["goal_timing"] = {"observations": observations,
+                    "observation_seconds": time.monotonic() - started,
+                    "limit": "An empty observation window does not prove continuation is disabled"}
         await service.goal(fork["id"], "set", objective="Paused integration-test goal", status="paused", token_budget=2000, user_requested=True)
-        assert (await service.goal(fork["id"]))["goal"]
+        check((await service.goal(fork["id"]))["goal"], "No paused native goal returned")
         await service.goal(fork["id"], "clear", user_requested=True)
         report["checks"].append("native paused goal set/get/clear")
         report["capabilities"] = await service.capabilities(fork["id"])
@@ -125,7 +153,7 @@ async def run():
         service = Service(cfg, store)
         await service.resume(task["id"])
         recovered = await service.subagents(task["id"])
-        assert {t["id"] for t in recovered["subagents"]} == {t["id"] for t in children["subagents"]}
+        check({t["id"] for t in recovered["subagents"]} == {t["id"] for t in children["subagents"]}, "Recovered child IDs differ")
         report["checks"].append("native child identity and subscriptions restored after restart")
         report["passed"] = True
         print("Extended checks passed:", ", ".join(report["checks"]), flush=True)
@@ -140,4 +168,5 @@ async def run():
         store.close()
 
 
-asyncio.run(run())
+if __name__ == "__main__":
+    asyncio.run(run())

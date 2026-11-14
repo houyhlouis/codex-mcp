@@ -8,14 +8,16 @@ from pathlib import Path
 
 from codex_local_mcp.config import load_config
 from codex_local_mcp.security import BridgeError, project_path, redact
-from codex_local_mcp.service import Service
 from codex_local_mcp.store import Store
 from codex_local_mcp.tools import arguments, dispatch
-from tests.helpers import install_fake_codex, write_config, link_or_skip, temp_root
+from tests.helpers import ControlledService, FaultGate, install_fake_codex, write_config, link_or_skip, temp_root
 
 
 class ServiceHarness(unittest.IsolatedAsyncioTestCase):
+    automatic_reconciliation = False
+
     async def asyncSetUp(self):
+        self.addCleanup(os.umask, os.umask(0o022))
         self.temp = tempfile.TemporaryDirectory(prefix="cmcp-", dir=temp_root())
         self.base = Path(self.temp.name).resolve()
         self.root = self.base / "projects"
@@ -27,9 +29,20 @@ class ServiceHarness(unittest.IsolatedAsyncioTestCase):
         write_config(self.config_file, self.state, fixture)
         self.cfg = load_config(str(self.config_file))
         self.store = Store(self.state)
-        self.service = Service(self.cfg, self.store)
+        self.service = self.new_service()
+        self.gates = {}
+
+    def new_service(self):
+        service = ControlledService(self.cfg, self.store)
+        service.automatic_reconciliation = self.automatic_reconciliation
+        return service
+
+    async def reconciliation_idle(self):
+        await asyncio.wait_for(self.service.reconciliation_idle(), 10)
 
     async def asyncTearDown(self):
+        for gate in self.gates.values():
+            gate.release.set()
         await self.service.close()
         self.store.close()
         self.temp.cleanup()
@@ -40,12 +53,35 @@ class ServiceHarness(unittest.IsolatedAsyncioTestCase):
             "prompt": prompt, "request_id": key})
 
     async def until(self, task_id, states=("completed", "failed", "interrupted", "waiting", "needs_resume")):
-        for _ in range(100):
-            task = self.service.get(task_id)
-            if task["status"] in states:
-                return task
-            await asyncio.sleep(0.02)
-        self.fail("Task did not reach expected state")
+        async def wait():
+            async with self.service.changed:
+                await self.service.changed.wait_for(lambda: self.service.get(task_id)["status"] in states)
+                return self.service.get(task_id)
+        return await asyncio.wait_for(wait(), 5)
+
+    def gate_call(self, name, method, *, before=False, error=None):
+        gate = self.gates[name] = FaultGate(name, error)
+        original = self.service.backend.call
+        async def gated(native_method, params, **kwargs):
+            matched = native_method == method and not gate.used
+            if matched and before:
+                await gate.hit()
+            result = await original(native_method, params, **kwargs)
+            if matched and not before:
+                await gate.hit()
+            return result
+        self.service.backend.call = gated
+        return gate
+
+    def gate_callback(self, name, method, *, error=None):
+        gate = self.gates[name] = FaultGate(name, error)
+        original = self.service.backend.on_message
+        async def gated(message):
+            if message.get("method") == method and not gate.used:
+                await gate.hit()
+            await original(message)
+        self.service.backend.on_message = gated
+        return gate
 
 class ServiceTest(ServiceHarness):
     async def test_complete_summary_and_evidence(self):
@@ -183,7 +219,7 @@ class ServiceTest(ServiceHarness):
         await self.service.close()
         self.store.close()
         self.store = Store(self.state)
-        self.service = Service(self.cfg, self.store)
+        self.service = self.new_service()
         self.assertEqual(before, self.store.events(0, 200))
         await self.service.resume(task["id"])
         self.assertEqual(len((await self.service.history(task["id"]))["data"]), 1)
@@ -270,13 +306,13 @@ class ServiceTest(ServiceHarness):
         task = await self.start_task("hold")
         common = {"threadId": task["thread_id"], "turnId": task["turn_id"]}
         await self.service.on_message({"method": "item/started", "params": {**common, "item": {
-            "id": "patch", "type": "fileChange", "changes": [{"path": "../../outside", "diff": "+ test"}]}}})
+            "id": "patch", "type": "fileChange", "changes": [{"path": "../../outside", "kind": {"type": "update"}, "diff": "+ test"}]}}})
         await self.service.on_message({"id": 9999, "method": "item/fileChange/requestApproval",
                                        "params": {**common, "itemId": "patch"}})
         req = self.service.requests(task["id"])[0]
         self.assertEqual(req["params"]["proposedChanges"][0]["diff"], "+ test")
         with self.assertRaisesRegex(BridgeError, "outside"):
-            await self.service.respond(req["id"], {"decision": "accept"}, human=True)
+            await self.service.respond(req["id"], {"decision": "accept"}, human=True, proposal_hash=req["proposal_hash"])
 
     async def test_secret_answers_never_enter_backend(self):
         task = await self.start_task("question")

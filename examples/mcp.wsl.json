@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "codex": {
+      "type": "stdio",
+      "command": "wsl.exe",
+      "args": ["python3", "/home/me/tools/codex-mcp/server.py", "serve"]
+    }
+  }
+}

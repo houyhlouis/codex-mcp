@@ -12,6 +12,8 @@ from pathlib import Path
 
 from codex_local_mcp.broker import rpc
 from codex_local_mcp.config import load_config
+from codex_local_mcp.security import BridgeError
+from codex_local_mcp.tools import FRAME_LIMIT
 from tests.helpers import install_fake_codex, write_config, stop_test_broker, temp_root
 from codex_local_mcp.platforms import IS_WINDOWS, process_running
 
@@ -29,7 +31,7 @@ class Client:
     async def start(self, capabilities=None, version="2025-11-25"):
         self.process = await asyncio.create_subprocess_exec(sys.executable, str(REPO / "server.py"),
             "--config", str(self.config), "serve", cwd=tempfile.gettempdir(), stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, limit=FRAME_LIMIT)
         self.reader = asyncio.create_task(self.read())
         result = await self.request("initialize", {"protocolVersion": version,
             "clientInfo": {"name": "wire-test", "version": "1"}, "capabilities": capabilities or {}})
@@ -114,21 +116,55 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
         return await client.tool("codex_start", project_id=descriptor["project_id"], prompt=prompt, request_id=request_id)
 
     async def until(self, client, task_id, statuses=("completed", "waiting", "interrupted")):
-        for _ in range(100):
+        async def wait():
             task = await client.tool("codex_get", task_id=task_id)
-            if task["status"] in statuses:
-                return task
-            await asyncio.sleep(0.025)
-        self.fail("No expected task status")
+            while task["status"] not in statuses:
+                await client.tool("codex_events", task_id=task_id, after=task["event_cursor"], wait_seconds=1)
+                task = await client.tool("codex_get", task_id=task_id)
+            return task
+        return await asyncio.wait_for(wait(), 10)
 
     async def test_handshake_tools_and_no_raw_execution(self):
         client = await self.client()
         reply = await client.request("tools/list")
         names = [t["name"] for t in reply["result"]["tools"]]
-        self.assertEqual(len(names), 32)
+        self.assertEqual(len(names), 34)
+        self.assertIn("codex_plans", names)
         self.assertNotIn("command/exec", names)
         self.assertEqual((await client.request("command/exec"))["error"]["code"], -32601)
         self.assertEqual((await client.request("ping"))["result"], {})
+
+    async def test_result_contract_aliases_and_compact_views_cross_ipc(self):
+        for version in ("2024-11-05", "2025-06-18"):
+            with self.subTest(version=version):
+                client = await self.client(version=version)
+                catalog = (await client.request("tools/list"))["result"]["tools"]
+                self.assertEqual(all("outputSchema" in tool for tool in catalog), version >= "2025-06-18")
+                failed = (await client.request("tools/call", {"name": "codex_get", "arguments": {"task_id": "missing"}}))["result"]
+                self.assertTrue(failed["isError"])
+                error = json.loads(failed["content"][0]["text"])
+                self.assertEqual(error["result_version"], 1)
+                self.assertFalse(error["ok"])
+                self.assertEqual(error["error"]["code"], "not_found")
+                self.assertEqual(error["error"]["ids"]["task_id"], "missing")
+                self.assertFalse(error["error"]["uncertain"])
+                self.assertTrue(error["error"]["next_steps"])
+                if version >= "2025-06-18":
+                    self.assertEqual(failed["structuredContent"], error)
+                else:
+                    self.assertNotIn("structuredContent", failed)
+                descriptor = await client.tool("codex_projects", action="create", path=str(self.base / "projects" / version))
+                task = await client.tool("codex_start", project_id=descriptor["id"], prompt="echo", operation_id=version)
+                self.assertEqual(task["operation_id"], version)
+                self.assertEqual(task["request_id_kind"], "operation")
+                await self.until(client, task["id"], ("completed",))
+                compact = await client.tool("codex_get", task_id=task["id"], view="compact")
+                self.assertNotIn("summary", compact)
+                self.assertNotIn("diff", compact)
+                self.assertIn("counts", compact)
+                events = await client.tool("codex_events", task_id=task["id"], view="compact")
+                self.assertTrue(events["ok"])
+                self.assertTrue(all(event["data_omitted"] for event in events["events"]))
 
     async def test_normal_mcp_flow_and_replay_without_notifications(self):
         client = await self.client()
@@ -203,6 +239,36 @@ class MCPTest(unittest.IsolatedAsyncioTestCase):
         await client.send({"jsonrpc": "2.0", "id": prompt["id"], "result": {"action": "accept", "content": {"decision": "accept"}}})
         self.assertEqual((await review)["status"], "sent")
         self.assertEqual((await self.until(client, task["id"]))["status"], "completed")
+
+    async def test_file_elicitation_accept_binds_displayed_proposal(self):
+        client = await self.client(capabilities={"elicitation": {"form": {}}})
+        task = await self.task(client, "file_approval")
+        req = (await self.until(client, task["id"]))["pending_requests"][0]
+        self.assertEqual(req["kind"], "file_approval")
+        review = asyncio.create_task(client.tool("codex_review_request", request_id=req["id"]))
+        prompt = await asyncio.wait_for(client.server_requests.get(), 5)
+        self.assertIn("\ncontent_redacted: false\nredaction_count: 0\n", prompt["params"]["message"])
+        displayed = json.loads(prompt["params"]["message"].rsplit("\n", 1)[1])
+        self.assertEqual(displayed["proposal_hash"], req["proposal_hash"])
+        self.assertGreater(displayed["proposal_revision"], 0)
+        await client.send({"jsonrpc": "2.0", "id": prompt["id"], "result": {"action": "accept", "content": {"decision": "accept"}}})
+        self.assertEqual((await review)["status"], "sent")
+        await self.until(client, task["id"], ("completed",))
+        events = await client.tool("codex_events", task_id=task["id"])
+        receipt = [e["data"] for e in events["events"] if e["kind"] == "bridge/response_sent"][-1]
+        self.assertEqual(receipt["proposal_hash"], req["proposal_hash"])
+        self.assertEqual(receipt["item_id"], "patch")
+
+    async def test_broker_review_route_requires_file_proposal_hash(self):
+        client = await self.client()
+        task = await self.task(client, "file_approval")
+        req = (await self.until(client, task["id"]))["pending_requests"][0]
+        with self.assertRaisesRegex(BridgeError, "stale or unknown"):
+            await rpc(self.config, "review", args={"request_id": req["id"], "response": {"decision": "accept"}})
+        result = await rpc(self.config, "review", args={"request_id": req["id"], "response": {"decision": "accept"},
+                                                      "proposal_hash": req["proposal_hash"]})
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual((await self.until(client, task["id"], ("completed",)))["status"], "completed")
 
     async def test_dismissed_elicitation_does_not_approve(self):
         client = await self.client(capabilities={"elicitation": {"form": {}}})

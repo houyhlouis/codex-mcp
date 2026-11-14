@@ -1,0 +1,517 @@
+{
+  "errors": {
+    "artifact_not_found": {
+      "next_steps": [
+        "Read codex_get view=result for retained references"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Artifact is absent or belongs to another task"
+    },
+    "artifact_too_large": {
+      "next_steps": [
+        "Use smaller evidence files"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Artifact exceeds the capture limit"
+    },
+    "artifact_version_mismatch": {
+      "next_steps": [
+        "Inspect current evidence; never use stale artifact content"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Artifact bytes no longer match their captured hash"
+    },
+    "backup_destination_exists": {
+      "next_steps": [
+        "Choose a new backup file path"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Backup destination already exists"
+    },
+    "bridge_error": {
+      "next_steps": [
+        "Inspect codex_status and the message"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Other rejected bridge operation"
+    },
+    "broker_identity_mismatch": {
+      "next_steps": [
+        "Use matching identity inputs, or stop the old broker with its configuration before reconnecting"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Running broker uses different configuration or bridge identity"
+    },
+    "broker_identity_unchecked": {
+      "next_steps": [
+        "Use the same bridge release to obtain a read-only broker health report"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Running broker cannot provide comparable health identity"
+    },
+    "budget_exceeded": {
+      "next_steps": [
+        "Use codex_settings on the root task to raise or clear budget"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Family resource budget refuses new execution"
+    },
+    "cursor_expired": {
+      "next_steps": [
+        "Follow resume_after or restart observation without its cursor"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Journal, request or outcome cursor expired or belongs to another scope or database"
+    },
+    "decision_expired": {
+      "next_steps": [
+        "Reply with plain text, or use a new operation_id for a new delegation"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "A typed decision or unsent delegation contract passed its expiry"
+    },
+    "decision_mismatch": {
+      "next_steps": [
+        "Refresh the pending request or scoped result/artifact references"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Decision binding, offered option or scoped evidence does not match"
+    },
+    "duplicate_thread_id": {
+      "next_steps": [
+        "Keep the database and backup; repair the conflicting identities"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Native thread is assigned to multiple task records"
+    },
+    "human_review_required": {
+      "next_steps": [
+        "Use codex_review_request or the local review command"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Positive decision needs human review or configured approval_relay"
+    },
+    "incident_preview_mismatch": {
+      "next_steps": [
+        "Preview the incident again and confirm its exact preview_id"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Incident changed or preview confirmation is missing"
+    },
+    "internal_error": {
+      "next_steps": [
+        "Inspect codex_status, codex_get and codex_events before repeating a mutation"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Unexpected internal failure; side effects cannot be ruled out"
+    },
+    "invalid_arguments": {
+      "next_steps": [
+        "Correct the arguments before calling again"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Invalid tool arguments or action fields"
+    },
+    "invalid_response": {
+      "next_steps": [
+        "Read codex_review_request and supply a supported response"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Unsupported or unsafe approval/answer shape"
+    },
+    "maintenance_busy": {
+      "next_steps": [
+        "Stop the broker with the same --config, then retry"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Pruning requires an offline broker"
+    },
+    "maintenance_failed": {
+      "next_steps": [
+        "Keep the state directory; inspect the applied flag and create a new dry-run plan"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "State maintenance could not finish"
+    },
+    "mcp_capability_required": {
+      "next_steps": [
+        "Declare the required capability on this request or use ordinary tools"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Required per-request MCP capability is absent"
+    },
+    "mcp_version_unsupported": {
+      "next_steps": [
+        "Select a supported version from server/discover"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Per-request MCP version is unsupported"
+    },
+    "native_protocol_incompatible": {
+      "next_steps": [
+        "Inspect codex_status and codex_history before resuming"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Native protocol or version cannot be used safely"
+    },
+    "native_rejected": {
+      "next_steps": [
+        "Inspect the message and current task before changing the call"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Native RPC explicitly rejected the call"
+    },
+    "native_timeout": {
+      "next_steps": [
+        "Inspect codex_get and codex_history; do not blindly retry"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Native acknowledgement did not arrive"
+    },
+    "not_found": {
+      "next_steps": [
+        "Refresh codex_list, codex_requests or codex_projects"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Unknown task, request or project id"
+    },
+    "operation_conflict": {
+      "next_steps": [
+        "Inspect the original operation; choose a new operation_id for different work"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Operation key was used with different arguments"
+    },
+    "operation_expired": {
+      "next_steps": [
+        "Inspect the task and use a new operation_id only for new work"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Operation result was pruned; the key remains reserved"
+    },
+    "operation_uncertain": {
+      "next_steps": [
+        "Inspect codex_get and codex_events before starting more work"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Persisted operation has no known final outcome"
+    },
+    "optional_native_capability_unavailable": {
+      "next_steps": [
+        "Use another supported control or install a tested Codex version and restart"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Native optional method is unavailable"
+    },
+    "person_review_required": {
+      "next_steps": [
+        "Use codex_review_request or the local terminal review and inspect the redaction warning"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Redacted file acceptance requires a person, including with approval_relay"
+    },
+    "prune_plan_invalid": {
+      "next_steps": [
+        "Create and inspect a new dry-run plan"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Prune plan is unknown, expired, committed or changed"
+    },
+    "prune_plan_limit": {
+      "next_steps": [
+        "Apply a reviewed plan, wait for expiry, or select less data"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Unexpired prune plans exhaust the count or storage budget"
+    },
+    "result_expired": {
+      "next_steps": [
+        "Inspect native history; do not treat missing evidence as complete"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Turn evidence expired under an operator retention policy"
+    },
+    "result_too_large": {
+      "next_steps": [
+        "Request a smaller page"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Requested page exceeds response budget"
+    },
+    "scope_unverified": {
+      "next_steps": [
+        "Use codex_resume and inspect codex_history before continuing"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Native identity, sandbox, cwd or project boundary cannot be verified"
+    },
+    "stale_proposal": {
+      "next_steps": [
+        "Fetch codex_review_request and review the current proposal_hash"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Reviewed file proposal hash is missing, stale or unknown"
+    },
+    "stale_request": {
+      "next_steps": [
+        "Refresh codex_requests"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Request is resolved, expired, disconnected or already answering"
+    },
+    "stale_turn": {
+      "next_steps": [
+        "Refresh codex_get before controlling the current turn"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Expected turn is no longer the active turn"
+    },
+    "state_conflict": {
+      "next_steps": [
+        "Inspect codex_get and codex_history"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Task state does not allow this control"
+    },
+    "state_invalid": {
+      "next_steps": [
+        "Keep the state directory and backup; inspect with a compatible release"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Stored state, revision or migration ledger is invalid"
+    },
+    "state_migration_failed": {
+      "next_steps": [
+        "Keep the database and backup; retry with a fixed release"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Backup or transactional migration failed"
+    },
+    "state_newer_schema": {
+      "next_steps": [
+        "Use a newer release or restore a backup in a separate directory"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Database layout belongs to a newer release"
+    },
+    "transport_unavailable": {
+      "next_steps": [
+        "Reconnect and inspect codex_get; use codex_resume to reconcile"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Broker/native connection changed or disconnected"
+    },
+    "unsupported_task_operation": {
+      "next_steps": [
+        "Use tasks/get, tasks/update or tasks/cancel for a returned execution id"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "MCP task operation is not supported"
+    },
+    "user_request_required": {
+      "next_steps": [
+        "Obtain an explicit user request before changing a native goal"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Goal mutation lacks an explicit user request"
+    },
+    "workspace_busy": {
+      "next_steps": [
+        "Inspect codex_get workspace_claims"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Another family owns workspace or capacity claims"
+    },
+    "workspace_read_unavailable": {
+      "next_steps": [
+        "Install a tested Codex version and restart; use codex_resume to re-check"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Optional native read API prevents proving workspace inactive"
+    },
+    "worktree_base_unknown": {
+      "next_steps": [
+        "Choose a locally available commit or reference"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Base does not identify a known commit"
+    },
+    "worktree_branch_exists": {
+      "next_steps": [
+        "Choose another worktree name"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Proposed codex branch already exists"
+    },
+    "worktree_dirty": {
+      "next_steps": [
+        "Preserve the changes before requesting cleanup"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Worktree contains unsaved or ignored files"
+    },
+    "worktree_filters_configured": {
+      "next_steps": [
+        "Prepare this worktree manually"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Git filters would execute configured programs"
+    },
+    "worktree_git_failed": {
+      "next_steps": [
+        "Inspect the worktree before any new mutation"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Git operation failed or exceeded its limits"
+    },
+    "worktree_git_missing": {
+      "next_steps": [
+        "Install Git and include its absolute directory in PATH"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Git is unavailable on absolute PATH entries"
+    },
+    "worktree_git_too_old": {
+      "next_steps": [
+        "Install Git 2.36.0 or newer"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Git is older than the supported minimum"
+    },
+    "worktree_interrupted": {
+      "next_steps": [
+        "Inspect codex_worktrees action=inspect before any new mutation"
+      ],
+      "retryable": false,
+      "uncertain": true,
+      "when": "Worktree operation was interrupted and may have changed Git state"
+    },
+    "worktree_locked": {
+      "next_steps": [
+        "Inspect the lock owner and retry with a new operation_id after it finishes"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "A worktree or repository lock prevents this action"
+    },
+    "worktree_name_invalid": {
+      "next_steps": [
+        "Choose another worktree name"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Worktree name cannot form a safe branch or folder"
+    },
+    "worktree_not_git": {
+      "next_steps": [
+        "Choose an existing non-bare Git repository"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Repository is not a supported Git working tree"
+    },
+    "worktree_not_managed": {
+      "next_steps": [
+        "Inspect the path and its private helper receipt"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Worktree ownership cannot be verified"
+    },
+    "worktree_plan_mismatch": {
+      "next_steps": [
+        "Call codex_worktrees action=plan again and review its plan_id"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Worktree plan no longer matches its inputs"
+    },
+    "worktree_target_exists": {
+      "next_steps": [
+        "Inspect the existing path; do not repeat creation blindly"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Target or receipt already exists"
+    },
+    "worktree_unmerged_commits": {
+      "next_steps": [
+        "Keep the branch with keep_branch=true or retain the worktree"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Worktree has commits outside its base"
+    },
+    "worktree_unsafe_config": {
+      "next_steps": [
+        "Inspect the worktree and helper receipt before retrying"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Git configuration, paths or helper metadata cannot be used safely"
+    },
+    "worktrees_disabled": {
+      "next_steps": [
+        "Set worktrees = true in the settings file and restart the broker"
+      ],
+      "retryable": false,
+      "uncertain": false,
+      "when": "Managed worktree actions are disabled"
+    }
+  },
+  "result_version": 1
+}

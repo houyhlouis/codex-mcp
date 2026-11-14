@@ -8,6 +8,7 @@ import asyncio
 import json
 import sys
 import tempfile
+from importlib.metadata import version
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -17,6 +18,7 @@ from mcp.types import ElicitResult
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 from codex_local_mcp.config import load_config
+from codex_local_mcp.tools import TOOLS
 from tests.helpers import install_fake_codex, write_config, stop_test_broker, temp_root
 
 
@@ -42,7 +44,7 @@ async def main():
                     init = await session.initialize()
                     assert init.protocolVersion == "2025-11-25"
                     tools = await session.list_tools()
-                    assert len(tools.tools) == 32
+                    assert len(tools.tools) == len(TOOLS)
                     await session.call_tool("codex_projects", {"action": "create", "path": str(base / "projects" / "test")})
                     started = await session.call_tool("codex_start", {"workdir": str(base / "projects" / "test"),
                         "prompt": "approval", "request_id": "sdk-start"})
@@ -63,7 +65,8 @@ async def main():
                             break
                         await asyncio.sleep(0.02)
                     assert current["status"] == "completed"
-                    print("Official MCP 1.26.0 client: initialize, 32 tool schemas, structured results, coding lifecycle and form elicitation passed")
+                    print(f"Official MCP SDK {version('mcp')}, negotiated MCP {init.protocolVersion}: "
+                          f"initialize, {len(TOOLS)} tool schemas, structured results, coding lifecycle and form elicitation passed")
         finally:
             await stop_test_broker(config)
 

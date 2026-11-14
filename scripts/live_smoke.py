@@ -21,6 +21,11 @@ from codex_local_mcp.store import Store
 from codex_local_mcp.tools import dispatch
 
 
+def check(condition, message):
+    if not condition:
+        raise RuntimeError(str(message))
+
+
 async def run(config_path, workdir):
     os.umask(0o077)
     cfg = load_config(config_path)
@@ -30,7 +35,7 @@ async def run(config_path, workdir):
     private_dir(cfg.state_dir)
     store = Store(cfg.state_dir)
     service = Service(cfg, store)
-    report = {"checks": [], "started_at": time.time()}
+    report = {"passed": False, "checks": [], "started_at": time.time()}
     try:
         report["status"] = await service.status()
         print("Codex connected:", report["status"]["codex_version"], flush=True)
@@ -65,14 +70,14 @@ async def run(config_path, workdir):
                 break
         else:
             raise RuntimeError("Live turn timed out")
-        assert current["status"] == "completed", current
-        assert answered, "Codex did not exercise ask_parent"
-        assert (project / "calculator.py").exists() and (project / "test_calculator.py").exists()
-        assert any(c["exitCode"] == 0 and "unittest" in (c["command"] or "") for c in current["commands"]), current["commands"]
+        check(current["status"] == "completed", current)
+        check(answered, "Codex did not exercise ask_parent")
+        check((project / "calculator.py").exists() and (project / "test_calculator.py").exists(), "Expected calculator source and test files")
+        check(any(c["exitCode"] == 0 and "unittest" in (c["command"] or "") for c in current["commands"]), current["commands"])
         report["checks"].extend(["model discovery", "named project permissions", "live parent question/reply", "coding turn", "unit test command evidence"])
         follow = await dispatch(service, "codex_send", {"task_id": task["id"], "request_id": "live-followup",
             "prompt": "Without running commands or editing files, state the function and the test cases you just implemented, based on this conversation."})
-        assert follow["thread_id"] == task["thread_id"]
+        check(follow["thread_id"] == task["thread_id"], "Follow-up changed the conversation")
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             page = await service.events(after=cursor, task_id=task["id"], wait_seconds=10)
@@ -80,7 +85,7 @@ async def run(config_path, workdir):
             current = service.get(task["id"])
             if current["status"] in ("completed", "failed", "interrupted"):
                 break
-        assert current["status"] == "completed", current
+        check(current["status"] == "completed", current)
         report["followup"] = current
         report["checks"].append("persistent follow-up")
         await service.close()
@@ -89,7 +94,7 @@ async def run(config_path, workdir):
         service = Service(cfg, store)
         await service.resume(task["id"])
         history = await service.history(task["id"], limit=10)
-        assert len(history["data"]) >= 2
+        check(len(history["data"]) >= 2, "Expected at least two history turns")
         report["checks"].extend(["backend restart and resume", "persisted history retrieval", "durable event replay"])
         report["history_turns"] = len(history["data"])
         report["passed"] = True
