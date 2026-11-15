@@ -13,20 +13,21 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from codex_local_mcp import retention, windows, worktrees
-from codex_local_mcp.security import validate_windows_path
+from codex_local_mcp.security import BridgeError, validate_windows_path
 from tests.test_documentation_contract import documentation_issues
 
 
 class WindowsCompatibilityTest(unittest.TestCase):
     def test_git_commondir_parent_components_use_the_checked_windows_walk(self):
         with tempfile.TemporaryDirectory() as temporary:
-            common = Path(temporary) / ".git"
+            common = Path(temporary).resolve() / ".git"
             admin = common / "worktrees" / "trial"
             admin.mkdir(parents=True)
             # Keep Linux filesystem operations, with the real Windows lexical
             # validation applied to an equivalent local-drive spelling.
             def validate(value):
-                validate_windows_path("C:\\" + value.lstrip("/").replace("/", "\\"))
+                spelling = value if PureWindowsPath(value).drive else "C:\\" + value.lstrip("/").replace("/", "\\")
+                validate_windows_path(spelling)
             with patch.object(worktrees, "IS_WINDOWS", True), patch.object(worktrees, "validate_windows_path", side_effect=validate):
                 self.assertEqual(worktrees._path(admin / ".." / ".."), common)
                 with self.assertRaises(worktrees.WorktreeError):
@@ -40,6 +41,13 @@ class WindowsCompatibilityTest(unittest.TestCase):
                     return original(path, *args, **kwargs)
                 with patch.object(Path, "lstat", lstat), self.assertRaises(worktrees.WorktreeError):
                     worktrees._path(linked / ".." / "safe")
+
+    def test_legitimate_windows_short_unicode_and_space_names_keep_the_same_rules(self):
+        validate_windows_path(r"C:\Users\RUNNER~1\AppData\Local\Temp\répository with spaces\.git")
+        for value in (r"C:\repo\CON", r"C:\repo\NUL.txt", r"C:\repo\file:stream", r"C:repo", r"\repo",
+                r"\\server\share\repo", r"\\?\C:\repo", r"\\.\C:\repo", r"C:\repo\name."):
+            with self.subTest(value=value), self.assertRaises(BridgeError):
+                validate_windows_path(value)
 
     def test_git_forward_slashes_and_drive_case_match_registered_windows_paths(self):
         class WindowsPath(PureWindowsPath):

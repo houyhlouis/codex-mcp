@@ -67,6 +67,13 @@ class WorktreesTest(unittest.TestCase):
         plan = w.plan(self.repo, name, **kwargs)
         return plan, w.create(plan, lock_dir=self.locks)
 
+    def replace_git_pointer(self, target):
+        # Git for Windows hides .git; CREATE_ALWAYS cannot overwrite it. Open
+        # the existing file and preserve both its attributes and UTF-8 spelling.
+        with (target / ".git").open("r+b") as stream:
+            stream.write(("gitdir: " + str(self.repo / ".git") + "\n").encode("utf-8"))
+            stream.truncate()
+
     def assert_code(self, code, function, *args, **kwargs):
         with self.assertRaises(w.WorktreeError) as caught:
             function(*args, **kwargs)
@@ -367,16 +374,17 @@ class WorktreesTest(unittest.TestCase):
         body = "#!/bin/sh\nprintf armed > " + shlex.quote(marker.as_posix()) + "\n"
         for name in ("post-checkout", "reference-transaction", "pre-auto-gc"):
             script = hooks / name
-            script.write_text(body)
+            script.write_bytes(body.encode("utf-8"))
             script.chmod(0o700)
         fsmonitor = self.base / "monitor"
-        fsmonitor.write_text(body)
+        fsmonitor.write_bytes(body.encode("utf-8"))
         fsmonitor.chmod(0o700)
+        monitor_command = shlex.quote(fsmonitor.as_posix())
         self.git("config", "core.hooksPath", str(hooks))
-        self.git("config", "core.fsmonitor", str(fsmonitor))
-        self.git("config", "diff.external", str(fsmonitor))
+        self.git("config", "core.fsmonitor", monitor_command)
+        self.git("config", "diff.external", monitor_command)
         # Positive controls: these very scripts can run through real Git.
-        self.git("-c", "core.fsmonitor=" + str(fsmonitor), "status", "--porcelain")
+        self.git("-c", "core.fsmonitor=" + monitor_command, "status", "--porcelain")
         self.assertTrue(marker.exists())
         marker.unlink()
         control = self.base / "hook-control"
@@ -384,7 +392,7 @@ class WorktreesTest(unittest.TestCase):
         self.assertTrue(marker.exists())
         marker.unlink()
         _, created = self.prepared()
-        self.git("config", "diff.marker.textconv", str(fsmonitor))
+        self.git("config", "diff.marker.textconv", monitor_command)
         self.assert_code("unsafe_config", w.handoff, created["path"], max_bytes=100000)
         self.assertFalse(marker.exists())
         self.git("config", "--unset-all", "diff.marker.textconv")
@@ -484,7 +492,7 @@ class WorktreesTest(unittest.TestCase):
     def test_changed_worktree_git_pointer_is_refused_before_any_git_in_the_worktree(self):
         _, created = self.prepared()
         target = Path(created["path"])
-        (target / ".git").write_text("gitdir: " + str(self.repo / ".git") + "\n")
+        self.replace_git_pointer(target)
         self.calls.clear()
         for function, options in ((w.inspect, {}), (w.handoff, {"max_bytes": 10000}),
                 (w.cleanup, {"lock_dir": self.locks}), (w.plan, {"name": "child"})):
@@ -500,7 +508,7 @@ class WorktreesTest(unittest.TestCase):
         def changed(command, **options):
             if "status" in command and not seen:
                 seen.append(command)
-                (target / ".git").write_text("gitdir: " + str(self.repo / ".git") + "\n")
+                self.replace_git_pointer(target)
             return original(command, **options)
         with patch.object(w.subprocess, "Popen", side_effect=changed):
             self.assert_code("unsafe_config", w.inspect, target)
@@ -529,7 +537,7 @@ class WorktreesTest(unittest.TestCase):
         self.assertEqual(record["state"], "creating")
         self.assertNotIn("git_dir", record)
         self.assertTrue(w.inspect(planned["path"])["managed"])
-        (Path(planned["path"]) / ".git").write_text("gitdir: " + str(self.repo / ".git") + "\n")
+        self.replace_git_pointer(Path(planned["path"]))
         self.assert_code("unsafe_config", w.inspect, planned["path"])
 
     def test_receipt_symlink_is_not_accepted(self):
@@ -597,7 +605,8 @@ class WorktreesTest(unittest.TestCase):
         _, created = self.prepared()
         copied = Path(created["path"]) / "link"
         self.assertFalse(copied.is_symlink())
-        self.assertEqual(copied.read_text(), str(outside))
+        self.assertEqual(Path(os.fsdecode(copied.read_bytes())).resolve(), outside.resolve())
+        self.assertEqual(copied.read_bytes(), self.git("show", "HEAD:link"))
 
     def test_submodule_is_reported_and_not_initialised(self):
         head = self.git("rev-parse", "HEAD").strip().decode()
@@ -736,7 +745,7 @@ class WorktreesTest(unittest.TestCase):
 
     def test_handoff_binary_marker_must_be_a_header_not_file_content(self):
         _, created = self.prepared()
-        (Path(created["path"]) / "tracked.txt").write_text("GIT binary patch\n")
+        (Path(created["path"]) / "tracked.txt").write_bytes(b"GIT binary patch\n")
         result = w.handoff(created["path"], max_bytes=100000)
         self.assertIn(b"+GIT binary patch\n", result["patch"])
         self.assertFalse(result["binary"])

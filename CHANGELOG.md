@@ -1,8 +1,21 @@
 # Changelog
 
-## 0.2.1 — in development
+## 0.2.2 — in development
 
-Fixes for Windows and macOS, found by the first CI run of 0.2.0 on those systems. Includes everything in 0.2.0. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0; coming from 0.1.1, it is upgraded as described under 0.2.0.
+Fixes found by the second CI run, on Windows and macOS. Includes everything in 0.2.1 and 0.2.0. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0.
+
+### Fixed
+
+- A worktree name ending in `.` or `.lock` is refused with `name_invalid` (*The name cannot form a Git branch*) before anything is done in the repository. Git cannot use such a name for a branch; on Windows it was refused later with a misleading `unsafe_config`.
+
+### Changed
+
+- Several worktree and Windows pipe tests assumed Linux behaviour (`\n` line endings, `/` in paths, replaceable hidden files, a handle count taken before Python's thread pool started). They now check the same things on Windows and macOS.
+- 1229 offline tests (1221 in 0.2.1).
+
+## 0.2.1 — 2026-11-14
+
+Fixes for Windows and macOS, found by the first CI run of 0.2.0 on those systems. Not released on its own; included in 0.2.2. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0; coming from 0.1.1, it is upgraded as described under 0.2.0.
 
 ### Fixed
 
@@ -18,7 +31,7 @@ Fixes for Windows and macOS, found by the first CI run of 0.2.0 on those systems
 
 ## 0.2.0 — 2026-11-14
 
-Stability release that follows the audit of v0.1.1. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database is upgraded automatically on the next start, after a backup is saved next to it.
+Stability release that follows the audit of v0.1.1. Not released on its own; included in 0.2.2. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database is upgraded automatically on the next start, after a backup is saved next to it.
 
 ### Security
 

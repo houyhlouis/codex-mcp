@@ -158,6 +158,8 @@ def _text(value):
 def _name(value):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,63}", value) or ".." in value:
         raise WorktreeError("name_invalid", "Use a name of 1-64 letters, digits, dots, underscores or hyphens; do not start with a dot or hyphen, or include '..'.")
+    if value.endswith((".", ".lock")):
+        raise WorktreeError("name_invalid", "The name cannot form a Git branch; choose another name.")
     return value
 
 

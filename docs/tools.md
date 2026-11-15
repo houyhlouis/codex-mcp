@@ -511,7 +511,7 @@ The tool is off by default. Turn it on with `worktrees = true` in the [settings 
 
 | `action` | Arguments | What it does |
 |---|---|---|
-| `plan` | `repo` (absolute path) or `project_id`; `name`; `base` (`HEAD`) | Shows what would be created: folder, branch `codex/NAME`, base commit, shared Git directory, and a `plan_id`. Changes nothing |
+| `plan` | `repo` (absolute path) or `project_id`; `name` (1–64 letters, digits, `.`, `_` or `-`; not starting with `.` or `-`, without `..`, not ending with `.` or `.lock`); `base` (`HEAD`) | Shows what would be created: folder, branch `codex/NAME`, base commit, shared Git directory, and a `plan_id`. Changes nothing |
 | `create` | the same as `plan`, plus `plan_id` and `request_id` | Creates the worktree if nothing has changed since the plan, and returns its `project_id` |
 | `inspect` | `project_id` or `path` | State of the worktree: branch, head, unsaved changes, the tasks using it, unfinished operations |
 | `handoff` | `task_id` of a task in the worktree whose turn has finished | Stores the changes since the base as a patch artifact and returns a reference to it |

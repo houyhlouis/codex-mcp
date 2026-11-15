@@ -6,6 +6,7 @@ import os
 import threading
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from ctypes import wintypes as w
 from unittest.mock import patch
 
@@ -173,16 +174,23 @@ class WindowsPipeTest(unittest.IsolatedAsyncioTestCase):
             return count.value
         async def handler(payload):
             return b"{}"
-        address, baseline = self.address(), handles()
+        address, loop = self.address(), asyncio.get_running_loop()
         self.assertEqual(ctypes.sizeof(win.Overlapped), 32 if ctypes.sizeof(ctypes.c_void_p) == 8 else 20)
-        for _ in range(8):
-            server = win.PipeServer(address, handler, 4096)
-            server.start()
-            try:
-                peer = win.OwnedPipe(await asyncio.wait_for(asyncio.to_thread(win.connect_pipe, address), 3))
-                peer.close()  # disconnect before sending any request
-                self.assertEqual(await asyncio.wait_for(win.exchange(address, b"next", 4096, 3), 5), b"{}")
-            finally:
-                await self.stop(server)  # also cancels the idle accept operation
-        self.assertEqual(win.CLIENT_BUDGET.active, 0)
-        self.assertLessEqual(handles(), baseline + 6)
+        # Keep executor capacity fixed: cold executor/pipe setup is not a leak.
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="test-pipe-connect") as executor:
+            async def cycle():
+                server = win.PipeServer(address, handler, 4096)
+                server.start()
+                try:
+                    peer = win.OwnedPipe(await asyncio.wait_for(loop.run_in_executor(executor, win.connect_pipe, address), 3))
+                    peer.close()  # disconnect before sending any request
+                    self.assertEqual(await asyncio.wait_for(win.exchange(address, b"next", 4096, 3), 5), b"{}")
+                finally:
+                    await self.stop(server)  # also cancels the idle accept operation
+            await cycle()  # Warm the same executor and every pipe phase.
+            baseline, samples = handles(), []
+            for _ in range(8):
+                await cycle()
+                samples.append(handles())
+            self.assertEqual(win.CLIENT_BUDGET.active, 0)
+            self.assertLessEqual(max(samples), baseline + 6, f"baseline={baseline}, samples={samples}")
