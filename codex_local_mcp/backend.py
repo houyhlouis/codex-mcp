@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import time
+import traceback
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -312,7 +313,12 @@ class AppServer:
             self.pending.pop(request_id, None)
             if future.done() and not future.cancelled():
                 # Disconnect can cancel the callback waiting on this future.
-                future.exception()
+                error = future.exception()
+                if error is not None:
+                    # wait_for's completed frame still owns the failed future.
+                    # Keep traceback locations, but release those frame locals.
+                    traceback.clear_frames(error.__traceback__)
+            future = error = None
 
     async def respond(self, request_id, result=None, error=None, *, before_send=None):
         await self.send({"id": request_id, "error": error} if error else {"id": request_id, "result": result},
@@ -339,6 +345,7 @@ class AppServer:
                             future.set_exception(RpcError(message["error"]))
                         else:
                             future.set_result(message.get("result", {}))
+                    future = None
                 else:
                     self.events.put_nowait(message, len(line))
         except EventBudgetExceeded as exc:
@@ -367,6 +374,7 @@ class AppServer:
             for future in list(self.pending.values()):
                 if not future.done():
                     future.set_exception(BridgeError(reason, code='transport_unavailable'))
+            future = None
             if (self.events.qsize() or self._event_in_flight) and "event_gap_possible" not in reason:
                 reason += "; event_gap_possible"
             self.events.close()

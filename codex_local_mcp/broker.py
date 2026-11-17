@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from .security import BridgeError, private_dir, private_file, redact
@@ -29,6 +30,21 @@ def check_peer(sock):
     uid = unix_peer_uid(sock)
     if uid != os.getuid():
         raise BridgeError("Broker accepts only its owner's local processes")
+
+
+async def _close_writer(writer, timeout=None):
+    try:
+        writer.close()
+        if timeout is None:
+            await writer.wait_closed()
+        else:
+            await asyncio.wait_for(writer.wait_closed(), timeout)
+    except BaseException as exc:
+        # A stream's close future may itself own this exception.
+        traceback.clear_frames(exc.__traceback__)
+        raise
+    finally:
+        writer = None
 
 
 async def run_broker(config):
@@ -101,8 +117,10 @@ async def run_broker(config):
                     pending = request.get("method") == "review" or request.get("name") in ("codex_respond", "codex_review_request")
                     error.ids.setdefault("pending_request_id" if pending else "operation_id", args["request_id"])
             response["error_data"] = error.as_dict()
+            error = None  # BridgeError may carry this request's traceback.
         finally:
             clients.discard(current)
+            current = None  # A cancelled Task can retain its own traceback.
         encoded = json.dumps(response, ensure_ascii=False).encode("utf-8")
         if len(encoded) + 1 > MAX_FRAME:
             error = BridgeError("Result exceeds the transport frame limit; request a smaller page", code="result_too_large")
@@ -116,16 +134,18 @@ async def run_broker(config):
             result = await handle_payload(raw)
             writer.write(result + b"\n")
             await writer.drain()
-        except (BridgeError, OSError, TimeoutError, ValueError):
+        except (BridgeError, OSError, TimeoutError, ValueError) as exc:
             # Rejected peers, oversized frames and vanished clients only end
             # this connection; they must not log unhandled-task tracebacks.
-            pass
+            traceback.clear_frames(exc.__traceback__)
         finally:
-            writer.close()
             try:
-                await writer.wait_closed()
-            except OSError:
-                pass
+                try:
+                    await _close_writer(writer)
+                except OSError:
+                    pass
+            finally:
+                reader = writer = None
 
     server = None
     try:
@@ -196,9 +216,14 @@ async def rpc(config, method, *, name=None, args=None, timeout=90):
         if "error" in response:
             raise response_error(response)
         return response["result"]
+    except BaseException as exc:
+        traceback.clear_frames(exc.__traceback__)
+        raise
     finally:
-        writer.close()
-        await writer.wait_closed()
+        try:
+            await _close_writer(writer)
+        finally:
+            reader = writer = None
 
 
 def health_snapshot(config, service):
@@ -241,9 +266,14 @@ async def _read_diagnostic(config, payload, timeout):
             writer.write(payload + b"\n")
             await asyncio.wait_for(writer.drain(), timeout)
             raw = await asyncio.wait_for(reader.readline(), timeout)
+        except BaseException as exc:
+            traceback.clear_frames(exc.__traceback__)
+            raise
         finally:
-            writer.close()
-            await asyncio.wait_for(writer.wait_closed(), timeout)
+            try:
+                await _close_writer(writer, timeout)
+            finally:
+                reader = writer = None
     response = json.loads(raw)
     if not isinstance(response, dict):
         raise BridgeError("Broker health returned an invalid response")

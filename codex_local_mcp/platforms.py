@@ -234,6 +234,8 @@ async def stdio_lines(stream, limit=1024 * 1024):
         except (RuntimeError, OSError, ValueError):
             if not stopping.is_set() and not loop.is_closed():
                 asyncio.run_coroutine_threadsafe(queue.put(b""), loop)
+        finally:
+            future = None  # A failed queue submission can retain this frame.
 
     threading.Thread(target=pump, daemon=True, name="mcp-stdin").start()
     try:
@@ -245,4 +247,5 @@ async def stdio_lines(stream, limit=1024 * 1024):
                 break
             yield item
     finally:
+        item = None  # A raised frame error must not own its generator frame.
         stopping.set()

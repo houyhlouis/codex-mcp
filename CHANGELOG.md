@@ -1,8 +1,21 @@
 # Changelog
 
-## 0.2.2 — in development
+## 0.2.3 — in development
 
-Fixes found by the second CI run, on Windows and macOS. Includes everything in 0.2.1 and 0.2.0. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0.
+Fix found by the third CI run, on Windows. Includes everything in 0.2.2, 0.2.1 and 0.2.0. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0.
+
+### Fixed
+
+- **Windows: a stopped pipe server released its handles only at Python's next garbage collection.** The error that ends a cancelled or timed-out pipe operation formed a reference cycle with the code that raised it, which kept the stopped server, its thread and its locks alive. On Windows these hold system handles: one per stop on Python 3.13 and newer, about eight on Python 3.11. Errors in the pipe client, the broker's connections and the connection to Codex are now released the same way, as soon as they are handled.
+
+### Changed
+
+- The Windows pipe test checks that each stopped server is freed at once, without garbage collection, and still fails if handles grow from one round to the next. New tests on every platform check the same for pipe, broker and Codex-connection errors.
+- 1266 offline tests (1229 in 0.2.2).
+
+## 0.2.2 — 2026-11-15
+
+Fixes found by the second CI run, on Windows and macOS. Not released on its own; included in 0.2.3. Includes everything in 0.2.1 and 0.2.0. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0.
 
 ### Fixed
 
@@ -15,7 +28,7 @@ Fixes found by the second CI run, on Windows and macOS. Includes everything in 0
 
 ## 0.2.1 — 2026-11-14
 
-Fixes for Windows and macOS, found by the first CI run of 0.2.0 on those systems. Not released on its own; included in 0.2.2. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0; coming from 0.1.1, it is upgraded as described under 0.2.0.
+Fixes for Windows and macOS, found by the first CI run of 0.2.0 on those systems. Not released on its own; included in 0.2.3. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database layout is the same as in 0.2.0; coming from 0.1.1, it is upgraded as described under 0.2.0.
 
 ### Fixed
 
@@ -31,7 +44,7 @@ Fixes for Windows and macOS, found by the first CI run of 0.2.0 on those systems
 
 ## 0.2.0 — 2026-11-14
 
-Stability release that follows the audit of v0.1.1. Not released on its own; included in 0.2.2. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database is upgraded automatically on the next start, after a backup is saved next to it.
+Stability release that follows the audit of v0.1.1. Not released on its own; included in 0.2.3. Stop the broker before you update (`python3 server.py stop`), then restart your MCP client. The state database is upgraded automatically on the next start, after a backup is saved next to it.
 
 ### Security
 

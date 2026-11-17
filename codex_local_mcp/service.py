@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+import traceback
 import uuid
 from contextvars import ContextVar
 from contextlib import contextmanager
@@ -291,6 +292,11 @@ class Service(ExtendedControls):
         except TimeoutError as exc:
             raise BridgeError("Task-family reconciliation did not settle within 5 seconds; inspect codex_get and retry with a new request_id",
                 code="state_conflict", ids={"task_id": task_id}) from exc
+        except BaseException as exc:
+            traceback.clear_frames(exc.__traceback__)
+            raise
+        finally:
+            caller = None
 
     async def os_process_status(self):
         # An empty scope probes availability without reading any cmdlines.
@@ -1634,7 +1640,7 @@ class Service(ExtendedControls):
                         family = self._admit(key, name, args)
                     except WorkspaceBusy as exc:
                         if exc.reconcile_ids:
-                            blocked = exc
+                            blocked = tuple(exc.reconcile_ids)
                         else:
                             failure = exc
                     except Exception as exc:
@@ -1652,7 +1658,10 @@ class Service(ExtendedControls):
                 if failure is not None:
                     if isinstance(failure, BridgeError) and failure.code == "budget_exceeded" and args.get("task_id"):
                         self.schedule_budget_check(args["task_id"])
-                    raise failure
+                    try:
+                        raise failure
+                    finally:
+                        failure = None
                 spawn = True
         # Creating a task may execute it immediately under an eager task factory.
         # There is no suspension between releasing admission and registering it.
@@ -1662,7 +1671,10 @@ class Service(ExtendedControls):
             self.operation_tasks[key] = running
             running.add_done_callback(lambda task: self._finish_task(self.operation_tasks, key, task))
         # Caller cancellation/timeouts detach the waiter, not the accepted work.
-        return await asyncio.shield(running)
+        try:
+            return await asyncio.shield(running)
+        finally:
+            running = None  # A failed task owns the caller's traceback.
 
     async def _run_operation(self, key, name, family, function, admission=None):
         token = self.current_operation.set(key)
@@ -1672,7 +1684,7 @@ class Service(ExtendedControls):
             if admission is not None:
                 args, blocked = admission
                 if blocked is not None:
-                    await self.wait_for_reconciliation(blocked.reconcile_ids)
+                    await self.wait_for_reconciliation(blocked)
                     async with self.admission_lock:
                         with self.store.transaction():
                             if self.shutting_down:
@@ -2623,7 +2635,10 @@ class Service(ExtendedControls):
         running = asyncio.create_task(self._respond(request_id, response, human=human, proposal_hash=proposal_hash, review_source=review_source))
         self.response_tasks[request_id] = running
         running.add_done_callback(lambda task: self._finish_task(self.response_tasks, request_id, task))
-        return await asyncio.shield(running)
+        try:
+            return await asyncio.shield(running)
+        finally:
+            running = None
 
     async def _respond(self, request_id, response, *, human=False, proposal_hash=None, review_source=None):
         req = self.review_request(request_id)

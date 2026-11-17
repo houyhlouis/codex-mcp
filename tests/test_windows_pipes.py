@@ -1,11 +1,13 @@
 """Native pipe fault tests. Every wait is bounded; run in Windows CI."""
 import asyncio
 import ctypes
+import gc
 import json
 import os
 import threading
 import unittest
 import uuid
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from ctypes import wintypes as w
 from unittest.mock import patch
@@ -179,18 +181,30 @@ class WindowsPipeTest(unittest.IsolatedAsyncioTestCase):
         # Keep executor capacity fixed: cold executor/pipe setup is not a leak.
         with ThreadPoolExecutor(max_workers=1, thread_name_prefix="test-pipe-connect") as executor:
             async def cycle():
-                server = win.PipeServer(address, handler, 4096)
-                server.start()
+                enabled = gc.isenabled()
+                gc.disable()
                 try:
-                    peer = win.OwnedPipe(await asyncio.wait_for(loop.run_in_executor(executor, win.connect_pipe, address), 3))
-                    peer.close()  # disconnect before sending any request
-                    self.assertEqual(await asyncio.wait_for(win.exchange(address, b"next", 4096, 3), 5), b"{}")
+                    server = win.PipeServer(address, handler, 4096)
+                    reference = weakref.ref(server)
+                    server.start()
+                    try:
+                        peer = win.OwnedPipe(await asyncio.wait_for(loop.run_in_executor(executor, win.connect_pipe, address), 3))
+                        peer.close()  # disconnect before sending any request
+                        self.assertEqual(await asyncio.wait_for(win.exchange(address, b"next", 4096, 3), 5), b"{}")
+                    finally:
+                        await self.stop(server)  # also cancels the idle accept operation
+                    del server
+                    self.assertIsNone(reference(), "Server lifetime check failed: retained after stop without cyclic GC")
                 finally:
-                    await self.stop(server)  # also cancels the idle accept operation
+                    if enabled:
+                        gc.enable()
             await cycle()  # Warm the same executor and every pipe phase.
+            gc.collect()
             baseline, samples = handles(), []
             for _ in range(8):
                 await cycle()
+                gc.collect()  # The weakref check above must pass before collection.
                 samples.append(handles())
+                self.assertLessEqual(samples[-1], baseline + 6, f"Native handle growth after GC: baseline={baseline}, samples={samples}")
             self.assertEqual(win.CLIENT_BUDGET.active, 0)
-            self.assertLessEqual(max(samples), baseline + 6, f"baseline={baseline}, samples={samples}")
+            self.assertLessEqual(max(samples), baseline + 6, f"Native handle growth after GC: baseline={baseline}, samples={samples}")

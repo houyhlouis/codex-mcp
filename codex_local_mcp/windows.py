@@ -83,10 +83,8 @@ def wait_io(operation, timeout, cancelled=None, *, phase="operation", clock=time
     deadline = clock() + timeout if timeout is not None else None
     try:
         while True:
-            reason = (ConnectionAbortedError("Local named-pipe operation cancelled") if cancelled and cancelled.is_set()
-                      else TimeoutError(f"Local named-pipe {phase} deadline exceeded") if deadline is not None and clock() >= deadline
-                      else None)
-            if reason:
+            cancelling = cancelled is not None and cancelled.is_set()
+            if cancelling or deadline is not None and clock() >= deadline:
                 operation.cancel()
                 drain_deadline = clock() + CANCEL_GRACE
                 while clock() < drain_deadline:
@@ -98,7 +96,11 @@ def wait_io(operation, timeout, cancelled=None, *, phase="operation", clock=time
                     operation.wait(min(POLL_INTERVAL, max(0, drain_deadline - clock())))
                 if not operation.done:
                     operation.abandon()
-                raise reason
+                # An exception local would retain this frame and the operation
+                # through its own traceback until cyclic GC runs.
+                if cancelling:
+                    raise ConnectionAbortedError("Local named-pipe operation cancelled")
+                raise TimeoutError(f"Local named-pipe {phase} deadline exceeded")
             result = operation.poll()
             if result is not None:
                 return result
@@ -567,48 +569,64 @@ def connect_pipe(address, timeout=2, cancelled=None):
         a.kernel.WaitNamedPipeW(address, 20)
 
 
+def _finish_exchange(future, result=None, error=None):
+    if not future.done():
+        # Raising through a future would leave that future in wait_for's
+        # traceback. Transfer the error as data, then raise after dropping it.
+        future.set_result([result, error])
+
+
+def _exchange_worker(address, payload, maximum, timeout, loop, cancelled, finished, release, future):
+    handle = None
+    deadline = time.monotonic() + timeout
+    try:
+        handle = OwnedPipe(connect_pipe(address, min(2, timeout), cancelled))
+        write_line(handle, payload, min(WRITE_TIMEOUT, max(0, deadline - time.monotonic())), cancelled)
+        result = read_line(handle, maximum, max(0, deadline - time.monotonic()), cancelled)
+        write_line(handle, b"ACK", min(ACK_TIMEOUT, max(0, deadline - time.monotonic())), cancelled, phase="ACK")
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(_finish_exchange, future, result)
+    except BaseException as exc:
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(_finish_exchange, future, None, exc)
+    finally:
+        if handle is not None:
+            handle.close()
+        release()
+        future = None  # A transferred error's traceback includes this frame.
+        finished.set()
+
+
 async def exchange(address, payload, maximum, timeout):
     release = CLIENT_BUDGET.acquire()
     loop, cancelled, finished = asyncio.get_running_loop(), threading.Event(), threading.Event()
     future = loop.create_future()
 
-    def finish(result=None, error=None):
-        if not future.done():
-            future.set_exception(error) if error else future.set_result(result)
-
-    def work():
-        handle = None
-        deadline = time.monotonic() + timeout
-        try:
-            handle = OwnedPipe(connect_pipe(address, min(2, timeout), cancelled))
-            write_line(handle, payload, min(WRITE_TIMEOUT, max(0, deadline - time.monotonic())), cancelled)
-            result = read_line(handle, maximum, max(0, deadline - time.monotonic()), cancelled)
-            write_line(handle, b"ACK", min(ACK_TIMEOUT, max(0, deadline - time.monotonic())), cancelled, phase="ACK")
-            if not loop.is_closed():
-                loop.call_soon_threadsafe(finish, result)
-        except BaseException as exc:
-            if not loop.is_closed():
-                loop.call_soon_threadsafe(finish, None, exc)
-        finally:
-            if handle is not None:
-                handle.close()
-            release()
-            finished.set()
-
     try:
-        threading.Thread(target=work, daemon=True, name="mcp-pipe-client").start()
+        threading.Thread(target=_exchange_worker,
+            args=(address, payload, maximum, timeout, loop, cancelled, finished, release, future),
+            daemon=True, name="mcp-pipe-client").start()
     except BaseException:
         release()
         raise
     try:
-        return await asyncio.wait_for(future, timeout + CANCEL_GRACE + 1)
+        outcome = await asyncio.wait_for(future, timeout + CANCEL_GRACE + 1)
+        result, error = outcome
+        outcome.clear()  # The current event-loop callback may still own future.
     finally:
+        future = None
         cancelled.set()
         deadline = time.monotonic() + CANCEL_GRACE + 1
         while not finished.is_set() and time.monotonic() < deadline:
             await asyncio.sleep(POLL_INTERVAL)
         if not finished.is_set():
             raise TimeoutError("Local named-pipe client cancellation did not complete")
+    try:
+        if error is not None:
+            raise error
+        return result
+    finally:
+        error = None
 
 
 class PipeServer:
@@ -622,7 +640,7 @@ class PipeServer:
         self.workers, self.workers_lock = set(), threading.Lock()
         api().process_sid(require_unrestricted=True)
         self.listener = self.make_pipe(first=True)
-        self.thread = threading.Thread(target=self.accept, daemon=True, name="mcp-pipe-listener")
+        self.thread = None
 
     def make_pipe(self, first=False):
         with api().descriptor() as attributes:
@@ -634,8 +652,12 @@ class PipeServer:
 
     def start(self):
         try:
+            if self.thread is None:
+                self.thread = threading.Thread(target=self.accept, daemon=True, name="mcp-pipe-listener")
             self.thread.start()
         except BaseException:
+            if self.thread is None or self.thread.ident is None:
+                self.thread = None  # An unstarted bound target retains self.
             self.listener.close()
             raise
 
@@ -727,6 +749,7 @@ class PipeServer:
         finally:
             if future is not None and not future.done():
                 future.cancel()
+            future = None  # A handler error's traceback includes this frame.
             if not handle.closed:
                 api().kernel.DisconnectNamedPipe(handle.raw)
             handle.close()
@@ -736,7 +759,7 @@ class PipeServer:
 
     def close(self):
         self.stopped.set()
-        if self.thread.ident is None:
+        if self.thread is None or self.thread.ident is None:
             self.listener.close()
 
     async def wait_closed(self):
@@ -746,7 +769,7 @@ class PipeServer:
                 self.cancelled.set()
             with self.workers_lock:
                 busy = bool(self.workers)
-            if not busy and not self.thread.is_alive():
+            if not busy and (self.thread is None or not self.thread.is_alive()):
                 return
             await asyncio.sleep(POLL_INTERVAL)
         self.cancelled.set()

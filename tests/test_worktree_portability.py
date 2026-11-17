@@ -72,7 +72,7 @@ class WorktreePortabilityTest(unittest.TestCase):
 
 
 class PipeMeasurementTest(unittest.IsolatedAsyncioTestCase):
-    async def exercise(self, leak=0):
+    async def exercise(self, leak=0, retain_server=False):
         state = {"count": 100, "warm": False, "cycles": 0}
         def count(process, target):
             target._obj.value = state["count"]
@@ -92,6 +92,8 @@ class PipeMeasurementTest(unittest.IsolatedAsyncioTestCase):
             def __init__(self, address, *args):
                 self.address, self.workers = address, set()
                 self.thread = SimpleNamespace(is_alive=lambda: False)
+                if retain_server:
+                    self.cycle = self
             def start(self):
                 state["cycles"] += 1
             def close(self):
@@ -119,3 +121,7 @@ class PipeMeasurementTest(unittest.IsolatedAsyncioTestCase):
     async def test_per_iteration_handle_growth_is_still_refused(self):
         with self.assertRaisesRegex(AssertionError, "baseline=.*samples="):
             await self.exercise(leak=1)
+
+    async def test_server_cycle_is_refused_before_collecting_for_handle_counts(self):
+        with self.assertRaisesRegex(AssertionError, "Server lifetime check failed"):
+            await self.exercise(retain_server=True)
