@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.4 — unreleased
+## 0.2.4 — 2026-11-25
 
 Fixes from an independent audit of 0.2.3 (dated 2026-11-23). Stop the broker before you update (`python3 server.py stop`, with the same `--config` if you use one), then restart your MCP client. The state database layout is the same as in 0.2.0.
 
