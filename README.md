@@ -2,6 +2,15 @@
 
 English | [简体中文](README.zh-CN.md)
 
+[![houyhlouis/codex-mcp MCP server](https://glama.ai/mcp/servers/houyhlouis/codex-mcp/badges/score.svg)](https://glama.ai/mcp/servers/houyhlouis/codex-mcp)
+[![Tests](https://github.com/houyhlouis/codex-mcp/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/houyhlouis/codex-mcp/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](#requirements)
+[![MIT License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+![Windows](https://img.shields.io/badge/Windows-supported-0078D4)
+![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black)
+
 **Let Claude Code (or another compatible MCP client) hand coding work to your local OpenAI Codex CLI, and keep a two-way conversation with it.**
 
 Codex MCP is a small local MCP server. It turns the Codex CLI on your computer into a persistent coding subagent for your main AI agent:
