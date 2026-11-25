@@ -16,6 +16,7 @@ class ConfigBinaryTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(dir=temp_root())
         self.addCleanup(temporary.cleanup)
         self.base = Path(temporary.name).resolve()
+        self.enterContext(patch.dict(os.environ, {"CODEX_HOME": str(self.base / "codex-home")}))
         self.client = self.base / "client"
         self.settings = self.base / "settings"
         self.package = self.base / "package"

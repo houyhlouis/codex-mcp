@@ -9,7 +9,8 @@ Codex MCP is a **local, single-user** integration. It assumes the main agent, th
 - The MCP client talks to `server.py serve` over stdin/stdout.
 - `serve` talks to the broker over a **Unix socket** (macOS/Linux) or a **named pipe** (Windows). There is no TCP/HTTP listener.
 - Unix sockets are mode `0600` in a `0700` folder, and the peer's user ID is checked. Windows pipes have an explicit DACL for your account and SYSTEM, reject remote clients, and check that the peer process belongs to your account and is not restricted.
-- The broker accepts only the 32 named tools, a health check, a read-only health report for `doctor`, local human-review answers and shutdown. The health report contains versions and settings, never task content or credentials. There is no raw Codex protocol passthrough and no shell tool.
+- Before any tool runs, the broker checks that the client matches its identity, which includes the effective Codex home (`CODEX_HOME`, or `~/.codex` when unset or empty) alongside the server version and settings.
+- The broker accepts only the 34 named tools, a health check, a read-only health report for `doctor`, local human-review answers and shutdown. The health report contains versions and settings, never task content or credentials. There is no raw Codex protocol passthrough and no shell tool.
 
 ## Project boundary and sandbox
 
@@ -37,7 +38,7 @@ On Linux the server reads the process list (`/proc`) of your own user account to
 
 ### Worktrees
 
-`codex_worktrees` is off unless you set `worktrees = true`. When it is on, the server itself runs Git outside Codex's sandbox to create, inspect, hand off and remove worktrees. It therefore treats the repository as data that a task may have changed:
+Only `inspect` works on `codex_worktrees` without `worktrees = true`; every other action is off by default. The server itself runs Git outside Codex's sandbox to inspect, create, hand off and remove worktrees. It therefore treats the repository as data that a task may have changed:
 
 - Git runs without a shell, with your system and personal Git configuration ignored, hooks and the file-system monitor disabled, and the worktree's Git directory named explicitly instead of read from the `.git` file in the worktree.
 - Repositories whose configuration could make Git run a program or read data from elsewhere are refused: filters, included or conditional configuration, program settings, object alternates, sparse checkouts and partial clones. The configuration is checked again right before each Git call.
@@ -85,7 +86,7 @@ The state folder holds a SQLite database with task records and an event journal 
 - Codex's raw private reasoning is never stored.
 - Answers to questions are not journaled by the server, although Codex may include them in its own history.
 - The database has a schema version. Before an update changes its layout, the server saves a private backup next to it (`state.sqlite3.pre-v*.bak`; the newest three are kept). A database written by a newer version is refused and left unchanged.
-- File content is read only for files that Codex reported changing, inside the task's project, and it is redacted like everything else before it is returned. A reference to a changed file is refused when the file no longer matches what the turn produced. The hash of the unredacted file stays inside the database and is never shown.
+- File content is read only for files that Codex reported changing, inside the task's project. Pattern-based redaction works on text only: valid UTF-8 text is redacted like everything else, and JSON text is redacted field by field. Content that is not valid UTF-8 (such as an image or another binary file) is stored and returned byte for byte without redaction, with `content_redacted` set to `false`. A reference to a changed file is refused when the file no longer matches what the turn produced. The hash of the unredacted file stays inside the database and is never shown.
 - Nothing is encrypted. Apart from old upgrade backups, nothing is deleted automatically. Treat the state folder, its backups and Codex's own history in `~/.codex` as sensitive.
 - `server.py incident-export` writes the structure of a task for a bug report. It leaves out all content (prompts, output, paths, commands) rather than trying to find secrets in it, shows a preview first, and writes only what you confirmed.
 - You decide what is kept. `server.py backup` makes a checked copy, also while the broker is running. `server.py prune` removes old data, but only after it has shown a plan, and never data that a running task, an open approval or an unresolved operation still needs. The main agent cannot run either command. See [backing up and cleaning up](installation.md#backing-up-and-cleaning-up). Do not copy or delete the database files by hand while the broker is running.

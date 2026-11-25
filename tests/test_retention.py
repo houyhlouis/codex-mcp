@@ -97,11 +97,13 @@ class RetentionTest(unittest.TestCase):
             for index in range(50):
                 seq = self.event(content=str(index))
                 self.store.db.execute("INSERT INTO recovered_items VALUES ('finished','old-turn',?,?,?)", (str(index), "a" * 64, seq))
-        plan = self.retention.plan(100)
+        event_bytes = self.store.db.execute("SELECT SUM(LENGTH(CAST(data AS BLOB))) FROM events").fetchone()[0]
+        total = self.retention.plan(100)["managed_payload_bytes"]
+        # Expiring the events alone meets the target. Their cache must still expire.
+        plan = self.retention.plan(100, max_bytes=total - event_bytes)
         self.assertEqual(plan["counts"]["events"], 50)
         self.assertEqual(plan["counts"]["recovered_items"], 50)
-        event_bytes = self.store.db.execute("SELECT SUM(LENGTH(CAST(data AS BLOB))) FROM events").fetchone()[0]
-        self.assertGreater(plan["estimated_reclaimable_bytes"], event_bytes)
+        self.assertEqual(plan["estimated_reclaimable_bytes"], total)
         self.retention.commit(plan["plan_id"])
         self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 0)
         self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM recovered_items").fetchone()[0], 0)
@@ -251,6 +253,42 @@ class RetentionTest(unittest.TestCase):
             self.assertEqual(caught.exception.code, "prune_plan_invalid")
         self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM events").fetchone()[0], 3)
 
+    def test_event_id_membership_work_scales_linearly(self):
+        work = 0
+
+        class CountedSeq(int):
+            def __hash__(self):
+                nonlocal work
+                work += 1
+                return int.__hash__(self)
+
+            def __eq__(self, other):
+                nonlocal work
+                work += 1
+                return int.__eq__(self, other)
+
+        def count_sequences(cursor, row):
+            return sqlite3.Row(cursor, tuple(CountedSeq(value) if column[0] == "seq" else value
+                                             for column, value in zip(cursor.description, row)))
+
+        self.task()
+        self.task("live", "running")
+        self.store.db.row_factory = count_sequences
+        measurements = []
+        for total in (1024, 2048):
+            with self.store.transaction():
+                self.store.db.executemany("INSERT INTO events(task_id,kind,at,data) VALUES (?,'bridge/test',1,'{}')",
+                                          [("finished",), ("live",)] * 512)
+            work = 0
+            plan = self.retention.plan(100)
+            measurements.append(work)
+            saved = self.store.db.execute("SELECT data FROM retention_plans WHERE id=?", (plan["plan_id"],)).fetchone()
+            self.assertEqual(json.loads(saved[0])["selected"]["events"], list(range(1, total, 2)))
+            held = plan["protected"]["nonterminal_task_families"]
+            self.assertEqual((held["items"], held["bytes"]), (total // 2, total))
+        self.assertGreater(measurements[0], 0)
+        self.assertLess(measurements[1], 3 * measurements[0], measurements)
+
     def test_interrupted_commit_rolls_back_tombstones_events_and_file_changes(self):
         with self.store.transaction():
             self.task()
@@ -272,6 +310,7 @@ class RetentionTest(unittest.TestCase):
     def test_retained_result_protects_sources_and_artifacts_then_expires_together(self):
         with self.store.transaction():
             self.task(turn_id="turn", projection_turn_id="turn", evidence_complete=True)
+            self.image()
             self.store.db.execute("INSERT INTO turns(task_id,thread_id,turn_id,status) VALUES ('finished','native-finished','turn','completed')")
             seq = self.store.event("finished", "item/completed", {"turnId": "turn", "item": {"id": "claim", "type": "agentMessage", "text": "x" * 20000}})
             self.store.db.execute("UPDATE events SET at=1")
@@ -281,6 +320,7 @@ class RetentionTest(unittest.TestCase):
         protected = self.retention.plan(100)
         self.assertEqual(protected["counts"]["events"], 0)
         self.assertEqual(protected["counts"]["artifacts"], 0)
+        self.assertEqual(protected["counts"]["managed_images"], 0)
         stored = self.store.db.execute("SELECT content,source_seq,source_locator FROM artifacts").fetchone()
         self.assertIsNone(stored["content"])
         self.assertEqual(stored["source_seq"], seq)
@@ -290,6 +330,7 @@ class RetentionTest(unittest.TestCase):
             self.store.db.execute("UPDATE turn_results SET created_at=1")
         expired = self.retention.plan(100)
         self.assertEqual(expired["counts"]["artifacts"], 1)
+        self.assertEqual(expired["counts"]["managed_images"], 1)
         self.assertEqual(expired["counts"]["events"], 1)
         self.retention.commit(expired["plan_id"])
         self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0], 0)
@@ -333,11 +374,14 @@ class RetentionTest(unittest.TestCase):
     def test_compatible_task_extensions_keep_their_scoped_references(self):
         with self.store.transaction():
             self.task()
-            ref = artifact(self.store.db, "finished", "old-turn", b"retained bytes")
+            ref = artifact(self.store.db, "finished", "old-turn", b"retained bytes", source_seq=self.event())
             self.store.db.execute("UPDATE artifacts SET created_at=1")
             self.store.update("tasks", "finished", {"future": {"reference": ref["artifact_id"]}})
         plan = self.retention.plan(100)
         self.assertEqual(plan["counts"]["artifacts"], 0)
+        self.assertEqual(plan["counts"]["events"], 0)
+        self.assertEqual(plan["protected"]["unknown_metadata_references"]["bytes"], len(b"retained bytes"))
+        self.assertEqual(plan["protected"]["retained_results"]["items"], 0)
         self.retention.commit(plan["plan_id"])
         self.assertEqual(self.store.db.execute("SELECT content FROM artifacts WHERE id=?", (ref["artifact_id"],)).fetchone()[0], b"retained bytes")
 

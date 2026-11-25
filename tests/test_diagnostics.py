@@ -260,6 +260,17 @@ class DoctorTest(unittest.IsolatedAsyncioTestCase):
         self.start_mock.assert_awaited_once()
         self.assertIn("signin_missing", self.codes(report))
 
+    async def test_older_fingerprint_without_home_explains_why_a_restart_is_needed(self):
+        health = self.healthy(backend=True)
+        del health["fingerprint_inputs"]["codex_home"]
+        self.health_mock.side_effect = None
+        self.health_mock.return_value = health
+        report = await self.report()
+        mismatch = next(f for f in report["findings"] if f["code"] == "broker_identity_mismatch")
+        self.assertIn("support for checking CODEX_HOME", mismatch["message"])
+        self.assertNotIn("broker_environment_mismatch", self.codes(report))
+        self.status_mock.assert_not_awaited()
+
     async def test_toolchain_missing_and_no_environment_secrets_in_either_rendering(self):
         with self.path.open("a") as stream:
             stream.write(f'toolchain_paths=[{json.dumps(str(self.base / "missing-toolchain"))}]\n')
@@ -403,20 +414,33 @@ class HealthHelperTest(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("remote-message-must-not-appear", str(caught.exception))
 
     async def test_ping_refusals_use_codes_and_fixed_local_guidance(self):
-        for code, message in (("broker_identity_mismatch", "remote-message-must-not-appear"),
-                              ("state_invalid", "Configuration differs from the running broker")):
-            error = BridgeError(message, code=code)
-            with patch("codex_local_mcp.broker.rpc", AsyncMock(side_effect=error)):
+        config = SimpleNamespace(fingerprint="identity", endpoint="private-pipe", state_dir=Path.cwd(),
+                                 codex_home_digest="same-home")
+        cases = (
+            ("broker_identity_mismatch", "remote-message-must-not-appear", {}),
+            ("broker_identity_mismatch", "remote-message-must-not-appear", {"codex_home_digest": config.codex_home_digest}),
+            ("state_invalid", "Configuration differs from the running broker", {}),
+        )
+        for code, message, details in cases:
+            error = BridgeError(message, code=code, ids={"operation_id": "remote-only-id"}, details=details)
+            packet = json.dumps({"error": message, "error_data": error.as_dict()}).encode()
+            with (self.subTest(code=code, details=details), patch("codex_local_mcp.broker.IS_WINDOWS", True),
+                  patch("codex_local_mcp.broker.private_dir"), patch("codex_local_mcp.windows.exchange", AsyncMock(return_value=packet))):
                 with self.assertRaises(BridgeError) as caught:
-                    await ping_existing(SimpleNamespace())
+                    await ping_existing(config)
                 self.assertEqual(caught.exception.code, code)
                 if code == "broker_identity_mismatch":
-                    self.assertNotIn(message, str(caught.exception))
+                    self.assertEqual(
+                        str(caught.exception), "A broker started by a different version or configuration "
+                        "is still running for this state directory. "
+                        "Stop it with `python server.py stop` (add the same --config option if you use one), then retry")
+                    self.assertEqual(caught.exception.ids, {})
                 else:
-                    self.assertIs(caught.exception, error)
+                    self.assertEqual(caught.exception.as_dict(), error.as_dict())
 
     async def test_snapshot_contains_only_nonsecret_metadata_and_does_not_start_backend(self):
-        config = SimpleNamespace(fingerprint="identity", fingerprint_inputs={"max_tasks": 4})
+        config = SimpleNamespace(fingerprint="identity", fingerprint_inputs={"max_tasks": 4},
+                                 codex_home=str(Path.cwd() / "fixture-home"))
         backend = SimpleNamespace(alive=False, generation=0, version=None)
         service = SimpleNamespace(backend=backend, store=SimpleNamespace(schema_version=SCHEMA_VERSION))
         report = health_snapshot(config, service)

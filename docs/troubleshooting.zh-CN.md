@@ -28,9 +28,9 @@ python3 server.py doctor
 
 - 服务器、Python 和 Codex 的版本，以及你的 Codex 版本是否经过测试；
 - 实际使用的是哪个 Codex 程序，以及它是怎样找到的；
-- 配置文件和状态文件夹，以及状态文件夹是否私有；
+- 配置文件、状态文件夹和实际生效的 Codex 主目录（`CODEX_HOME`），以及状态文件夹是否私有；
 - 当前环境中本地套接字（Windows 上是命名管道）能否使用；
-- 是否有 broker 在运行，以及它是否由不同的版本或不同的设置启动；
+- 是否有 broker 在运行，以及它是否由不同的版本、不同的设置或不同的 Codex 主目录启动；
 - 状态数据库：版本、大小、一次快速的完整性检查、各数据表是否与其版本相符，以及旁边找到的备份文件。
 
 | 选项 | 额外作用 |
@@ -42,6 +42,16 @@ python3 server.py doctor
 一切正常时退出码为 0，有警告时为 1，有错误时为 2。如果你使用配置文件，请像 MCP 客户端配置里那样传入：`python3 server.py --config /path/config.toml doctor`。
 
 请在与 MCP 客户端相同的环境中运行 `doctor`。在终端里通过的检查，在受限的容器里可能失败，反过来也一样。
+
+加上 `--json` 时，`doctor` 会在以下三处报告实际生效的 Codex 主目录：
+
+```text
+facts.environment_identity.codex_home    # 客户端的 Codex 主目录
+facts.fingerprint_inputs.codex_home      # 纳入客户端身份标识的主目录
+facts.broker.codex_home                  # 正在运行的 broker 的 Codex 主目录
+```
+
+当只有主目录不同时，`doctor` 会报告错误 `broker_identity_mismatch` 并说明 `The differences are CODEX_HOME.`，同时保留警告 `broker_environment_mismatch`。如果正在运行的 broker 早于 0.2.4，它会指出缺少 `support for checking CODEX_HOME`。
 
 ## 常见问题
 
@@ -55,9 +65,12 @@ python3 server.py doctor
 | `Task has a native protocol error` | Codex 发来了当前版本无法理解的消息。请调用 `codex_resume` 并检查 `codex_history`。如果再次出现，你的 Codex 很可能比测试过的版本更新：请查看 `server.py status` 输出中的 `compatibility`。 |
 | `Native thread scope is unverified; resume before ...` | 自上次重启或重新连接以来，这个会话还没有与 Codex 核对过。请先对该任务调用 `codex_resume`，再重复这个操作。在此期间，待处理的审批会保持待处理状态，你仍然可以拒绝它。 |
 | `Codex connection changed ...; resume before retrying` | 操作发送途中 Codex 重启了。请调用 `codex_resume`，查看 `codex_get`，再决定是否重复该操作。 |
+| `Codex native message timed out before it was sent` | 等待向 Codex 发送消息达到 30 秒上限，没有任何内容发出（`retryable: true`，`uncertain: false`）。请先刷新任务或请求状态再重试。遇到此超时的待处理审批回答仍为 `pending`，重新回答即可。 |
+| `Codex native write timed out. The outcome is uncertain.` | 向 Codex 写入消息时达到 30 秒上限，结果未知（`uncertain: true`）。服务器已关闭与 Codex 的连接，并按断开连接后的流程恢复：正在运行的任务需要调用 `codex_resume`，发送途中的审批回答也已过期（带 `view: "permissions"` 的 `codex_get` 会显示 `decision_receipts[].delivery: "uncertain"`）。重复任何操作之前，请先调用 `codex_resume` 并检查 `codex_get` 和 `codex_history`。 |
 | `Drive-relative approval paths are not supported` | 补丁或权限请求使用了 `C:folder\file` 这样的 Windows 路径。请拒绝它；Codex 应该使用项目内的路径。 |
 | `/mcp` 或客户端的服务器列表中没有 `codex`，或显示失败 | 在终端中运行客户端配置里的那条命令（把 `serve` 换成 `status`），查看错误信息。确认 `server.py` 的路径是绝对路径。 |
-| `A broker started by a different version or configuration is still running` | 你更新了代码或修改了设置。运行 `python3 server.py stop`（如有 `--config` 请加上相同参数），然后重试。 |
+| `A broker started by a different version or configuration is still running` | 你更新了代码或修改了设置（0.2.3 或更早版本的 broker 在任何身份不一致时也会返回这条消息）。运行 `python3 server.py stop`（如有 `--config` 请加上相同参数），然后重试。 |
+| ``The running broker uses a different Codex home (CODEX_HOME). Stop it with `python server.py stop` (add the same --config option if you use one), then retry. Use separate state directories (state_dir) to run different Codex homes at the same time.`` | 客户端实际生效的 `CODEX_HOME` 与正在运行的 broker 不同。运行 `python3 server.py stop`（如有 `--config` 请加上相同参数）后重试，或为每个 Codex 主目录配置独立的 `state_dir`，见[Codex 主目录与状态文件夹](configuration.zh-CN.md#codex-主目录与状态文件夹)。 |
 | `Broker failed to start` / `did not become ready` | 查看状态文件夹中的 `broker.log`。某些受限容器禁止使用 Unix 套接字。 |
 | `Work directory ... missing` / `must be an absolute path` | 传入绝对路径，或让主代理用 `codex_projects`（`action: "create"`）创建文件夹。 |
 | `Select a dedicated project directory, not the home directory` | 请选择一个项目子文件夹。整个主目录或盘符根目录不能作为项目。 |
@@ -181,5 +194,9 @@ python3 server.py incident-export --task-id TASK_ID --output incident.json --con
 | `--after`、`--limit` | 包含哪些事件：某个游标之后的事件（默认 0），默认 200 条，最多 1,000 条 |
 | `--json` | 输出 JSON |
 | `--output`、`--confirm-preview` | 看过预览之后写入文件 |
+
+**请求数量上限与导出预算。** 导出在所有选定任务中总共最多包含 1,000 条请求（事件有独立的上限 `--limit`，最多 1,000 条）。如果请求更多，导出会先保留待处理请求，其次是选定事件引用的请求。接着保留与选定事件同一回合的请求，最后按从新到旧保留其余请求。当有请求被省略时，预览和文件中会带有 `"partial": true` 和 `"omitted_requests": N`（未省略任何请求时不含 `omitted_requests`）。纯文本预览会显示例如 `1000 requests included (1 omitted)`。省略数量变化时 `preview_id` 也会变化，因此 `--confirm-preview` 仍然只写入你看到的那份内容。
+
+为了符合导出预算（30,000 个结构节点、嵌套深度 24 或 2 MiB），导出也可能从最低优先级开始省略请求。这些被省略的请求同样计入 `omitted_requests`（同时带有 `"partial": true`），即使原本不到 1,000 条请求也是如此。只有在去掉所有请求后导出仍然超出预算时，命令才会以 `result_too_large` 失败。错误消息以 `Incident structure exceeds the export budget`（结构节点过多或嵌套过深）或 `Incident exceeds the 2 MiB export budget`（字节数过多）开头，后面接着 `. Preview one task with --limit 1 or select a different event window with --after. If that still exceeds the budget, report the bridge version and this error`。如果存储的数据无法构成有效的事件结构（正常情况下不会发生），则会以 `state_invalid` 失败：`Stored data could not form a structural incident. <details>. Run server.py doctor with the same configuration and report the bridge version and this error`。较长的请求历史不再因 `Unsupported or malformed structural incident fixture` 失败。
 
 维护者可以用模拟的 Codex 重放这样的文件，并把它变成测试，见[开发文档](development.md#incident-fixtures)。

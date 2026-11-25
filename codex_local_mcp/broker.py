@@ -24,6 +24,17 @@ from .config import environment_identity
 MAX_FRAME = FRAME_LIMIT
 
 
+def identity_mismatch(home_differs=False, *, ids=None, details=None):
+    restart = "Stop it with `python server.py stop` (add the same --config option if you use one), then retry"
+    if home_differs:
+        message = (f"The running broker uses a different Codex home (CODEX_HOME). {restart}. "
+                   "Use separate state directories (state_dir) to run different Codex homes at the same time.")
+    else:
+        message = ("A broker started by a different version or configuration is still running for this "
+                   f"state directory. {restart}")
+    return BridgeError(message, code="broker_identity_mismatch", ids=ids, details=details)
+
+
 def check_peer(sock):
     if IS_WINDOWS:
         raise BridgeError("Windows uses identity-checked named pipes")
@@ -78,7 +89,7 @@ async def run_broker(config):
         try:
             request = json.loads(raw)
             if not isinstance(request, dict) or (request.get("config") != config.fingerprint and request.get("method") not in ("stop", "health")):
-                raise BridgeError("Configuration differs from the running broker; stop it and reconnect", code="broker_identity_mismatch")
+                raise identity_mismatch(details={"codex_home_digest": config.codex_home_digest})
             method = request.get("method")
             if stopping.is_set() and method != "stop":
                 raise BridgeError("Broker is stopping; reconnect after shutdown completes")
@@ -199,7 +210,7 @@ async def rpc(config, method, *, name=None, args=None, timeout=90):
         except BridgeError as exc:
             raise BridgeError(str(exc), code="transport_unavailable", ids=identities) from exc
         if "error" in response:
-            raise response_error(response)
+            raise rpc_error(config, response, identities)
         return response["result"]
     info = config.socket.lstat()
     if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
@@ -214,7 +225,7 @@ async def rpc(config, method, *, name=None, args=None, timeout=90):
             raise BridgeError("Broker disconnected; reconnect and inspect task state before retrying", code="transport_unavailable", ids=identities)
         response = json.loads(line)
         if "error" in response:
-            raise response_error(response)
+            raise rpc_error(config, response, identities)
         return response["result"]
     except BaseException as exc:
         traceback.clear_frames(exc.__traceback__)
@@ -230,7 +241,7 @@ def health_snapshot(config, service):
     backend = service.backend
     return {"pid": os.getpid(), "bridge_version": __version__, "schema_version": service.store.schema_version,
             "fingerprint": config.fingerprint, "fingerprint_inputs": config.fingerprint_inputs,
-            "environment_identity": environment_identity(), "backend_alive": backend.alive,
+            "environment_identity": environment_identity(config.codex_home), "backend_alive": backend.alive,
             "backend_generation": backend.generation,
             "compatibility": dict(backend.compatibility) if backend.version else None}
 
@@ -312,6 +323,14 @@ def response_error(response):
     return BridgeError(str(message))
 
 
+def rpc_error(config, response, identities):
+    error = response_error(response)
+    if error.code == "broker_identity_mismatch":
+        digest = error.details.get("codex_home_digest")
+        return identity_mismatch(isinstance(digest, str) and digest != config.codex_home_digest, ids=identities)
+    return error
+
+
 def release_lock(fd):
     try:
         unlock_file(fd)
@@ -359,14 +378,7 @@ async def stop_broker(config, timeout=15):
 
 
 async def ping_existing(config):
-    try:
-        return await rpc(config, "ping", timeout=2)
-    except BridgeError as exc:
-        if exc.code == "broker_identity_mismatch":
-            raise BridgeError("A broker started by a different version or configuration is still running for this "
-                              "state directory. Stop it with `python server.py stop` (add the same --config option "
-                              "if you use one), then retry", code="broker_identity_mismatch") from exc
-        raise
+    return await rpc(config, "ping", timeout=2)
 
 
 async def ensure_broker(config):
@@ -401,6 +413,7 @@ async def ensure_broker(config):
             command.append("broker")
             child = subprocess.Popen(command,
                 cwd=str(Path(__file__).resolve().parent.parent),
+                env=config.subprocess_environment(),
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log,
                 close_fds=True, **detached_process_options())
         finally:

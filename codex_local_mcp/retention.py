@@ -167,8 +167,9 @@ class Retention:
         live_families = {t["root_task_id"] or t["id"] for t in tasks.values() if not t["deleted"]}
         protected_operations = {r["task_id"] for r in unresolved_rows if r["state"] == "running"
             or r["task_id"] not in tasks or (tasks[r["task_id"]]["root_task_id"] or r["task_id"]) in live_families}
+        terminal_statuses = TERMINAL | {"archived", "deleted"}
         seeds = {
-            "nonterminal_task_families": {t["id"] for t in tasks.values() if t["status"] not in TERMINAL | {"archived", "deleted"}},
+            "nonterminal_task_families": {t["id"] for t in tasks.values() if t["status"] not in terminal_statuses},
             "pending_requests": {r[0] for r in self.db.execute("SELECT task_id FROM requests WHERE status IN ('pending','answering')")},
             "unresolved_operations": protected_operations,
             "workspace_claims": {r[0] for r in self.db.execute("SELECT task_id FROM workspace_claims WHERE state!='inactive'")},
@@ -214,6 +215,7 @@ class Retention:
             value = json.loads(row["data"])
             meta_refs.update(v for v in strings(value) if v not in tasks and v != row["id"])
         selected = {k: [] for k in ("turn_results", "requests", "operations", "events", "artifacts", "managed_images", "evidence_entries", "recovered_items")}
+        selected_ids = {table: set() for table in selected}
         selected["execution_metadata"] = list(expired_executions)
         selected["plans"] = expired_plans
         selected["delegation_contracts"] = contracts
@@ -225,11 +227,12 @@ class Retention:
         total = expired_bytes + plan_bytes + extra_contract_bytes + sum(self.db.execute(f"SELECT COALESCE(SUM({expr}),0) FROM {table}").fetchone()[0] for table, expr in sizes.items())
         plan_reclaimed = plan_bytes - held_plan_bytes
         remaining, reclaimed = total - expired_bytes - contract_bytes - plan_reclaimed, expired_bytes + contract_bytes + plan_reclaimed
-        def choose(table, identity, size):
+        def choose(table, identity, size, *, required=False):
             nonlocal remaining, reclaimed
-            if max_bytes is not None and remaining <= max_bytes:
+            if not required and max_bytes is not None and remaining <= max_bytes:
                 return False
             selected[table].append(identity)
+            selected_ids[table].add(tuple(identity) if isinstance(identity, list) else identity)
             remaining -= size or 0
             reclaimed += size or 0
             return True
@@ -238,7 +241,7 @@ class Retention:
                 choose("turn_results", row["id"], row["bytes"])
         retained_turns, sources, artifact_refs = set(), set(), set()
         for row in self.db.execute("SELECT id,task_id,turn_id,data FROM turn_results"):
-            if row["id"] not in selected["turn_results"]:
+            if row["id"] not in selected_ids["turn_results"]:
                 retained_turns.add((row["task_id"], row["turn_id"]))
                 value = json.loads(row["data"])
                 def references(node):
@@ -259,7 +262,7 @@ class Retention:
             if row["task_id"] not in protected and row["id"] not in meta_refs and value.get("created_at", self.clock()) < cutoff:
                 choose("requests", row["id"], len(row["data"].encode()))
         for row in self.db.execute("SELECT id,data FROM requests"):
-            if row["id"] not in selected["requests"]:
+            if row["id"] not in selected_ids["requests"]:
                 meta_refs.update(strings(json.loads(row["data"])))
         # Legacy operations have no trustworthy age; use the migration time
         # without copying every historical operation during the upgrade.
@@ -271,15 +274,15 @@ class Retention:
             if row["task_id"] not in protected and (row["task_id"], row["turn_id"]) not in retained_turns:
                 choose("evidence_entries", [row[k] for k in ("task_id", "turn_id", "category", "item_key")], row["bytes"])
         retained_entry_refs = set()
-        chosen_entries = {tuple(v) for v in selected["evidence_entries"]}
         for row in self.db.execute("SELECT * FROM evidence_entries"):
-            if tuple(row[k] for k in ("task_id", "turn_id", "category", "item_key")) not in chosen_entries:
+            if tuple(row[k] for k in ("task_id", "turn_id", "category", "item_key")) not in selected_ids["evidence_entries"]:
                 sources.add(row["source_seq"])
                 retained_entry_refs.update(strings(json.loads(row["data"])))
         artifact_refs.update(retained_entry_refs)
+        all_artifact_refs = artifact_refs | meta_refs
         for row in self.db.execute("SELECT id,task_id,turn_id,COALESCE(LENGTH(content),0) size_bytes,created_at,source_seq FROM artifacts ORDER BY created_at,id"):
             removed = False
-            if (row["created_at"] < cutoff and row["task_id"] not in protected and row["id"] not in artifact_refs | meta_refs
+            if (row["created_at"] < cutoff and row["task_id"] not in protected and row["id"] not in all_artifact_refs
                     and (row["task_id"], row["turn_id"]) not in retained_turns):
                 removed = choose("artifacts", row["id"], row["size_bytes"])
             if not removed:
@@ -289,23 +292,21 @@ class Retention:
         for row in self.db.execute("SELECT seq,task_id,LENGTH(CAST(data AS BLOB)) bytes FROM events WHERE at<? ORDER BY seq", (cutoff,)):
             if row["task_id"] not in protected and row["seq"] not in sources and str(row["seq"]) not in meta_refs:
                 choose("events", row["seq"], row["bytes"])
-        expired_sources = set(selected["events"])
         for row in self.db.execute("SELECT r.*," + sizes["recovered_items"] + " bytes FROM recovered_items r"):
             key = [row[k] for k in ("task_id", "turn_id", "item_id")]
-            if row["source_seq"] in expired_sources:
+            if row["source_seq"] in selected_ids["events"]:
                 # Removing a source must remove its disposable cache atomically,
                 # including when the source already met the byte target.
-                selected["recovered_items"].append(key)
-                remaining -= row["bytes"]
-                reclaimed += row["bytes"]
+                choose("recovered_items", key, row["bytes"], required=True)
             elif row["task_id"] not in protected and not self.db.execute("SELECT 1 FROM events WHERE seq=?", (row["source_seq"],)).fetchone():
                 choose("recovered_items", key, row["bytes"])
+        retained_result_tasks = {task_id for task_id, _ in retained_turns}
         for row in self.db.execute("SELECT * FROM managed_images WHERE created_at<? ORDER BY created_at,id", (cutoff,)):
             # Offline bridge state cannot prove absence of external native forks.
             native_hold = row["state"] == "native_history"
             if (row["task_id"] not in protected and row["operation_id"] not in unresolved and not native_hold
                     and row["id"] not in meta_refs and row["path"] not in meta_refs
-                    and not any(task_id == row["task_id"] for task_id, _ in retained_turns)):
+                    and row["task_id"] not in retained_result_tasks):
                 choose("managed_images", row["id"], row["size_bytes"])
         reasons = {
             "nonterminal_task_families": "Task families are unfinished. Finish or interrupt their work, then make a new plan",
@@ -332,10 +333,11 @@ class Retention:
             held[key]["bytes"] += size or 0
         for table, expression in sizes.items():
             columns = "*" if table != "events" else "*,seq AS id"
+            fields = ("task_id", "turn_id", "category", "item_key") if table == "evidence_entries" else ("task_id", "turn_id", "item_id") if table == "recovered_items" else None
+            table_ids = selected_ids[table]
             for row in self.db.execute(f"SELECT {columns},{expression} payload_bytes FROM {table}"):
-                fields = ("task_id", "turn_id", "category", "item_key") if table == "evidence_entries" else ("task_id", "turn_id", "item_id") if table == "recovered_items" else None
-                identity = [row[k] for k in fields] if fields else row["id"]
-                if identity in selected[table]:
+                identity = tuple(row[k] for k in fields) if fields else row["id"]
+                if identity in table_ids:
                     continue
                 for reason, ids in families.items():
                     if row["task_id"] in ids:

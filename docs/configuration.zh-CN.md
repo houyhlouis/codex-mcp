@@ -11,7 +11,7 @@
 | 设置 | 默认值 | 说明 |
 |---|---|---|
 | `codex_binary` | `"codex"`（在 `PATH` 中查找） | Codex 程序：可以写单独的命令名，也可以写绝对路径。见[如何查找 Codex](#如何查找-codex) |
-| `state_dir` | `~/.local/state/codex-mcp`（macOS/Linux，或 `$XDG_STATE_HOME/codex-mcp`）；`%LOCALAPPDATA%\CodexMCP`（Windows） | broker 的数据库、日志和套接字所在的私有文件夹。必须是专用的绝对路径，不能是主目录。在 macOS/Linux 上，完整套接字路径不能超过 100 字节 |
+| `state_dir` | `~/.local/state/codex-mcp`（macOS/Linux，或 `$XDG_STATE_HOME/codex-mcp`）；`%LOCALAPPDATA%\CodexMCP`（Windows） | broker 的数据库、日志和套接字所在的私有文件夹。必须是专用的绝对路径，不能是主目录。在 macOS/Linux 上，完整套接字路径不能超过 100 字节。每个 Codex 主目录请使用各自的文件夹，见[Codex 主目录与状态文件夹](#codex-主目录与状态文件夹) |
 | `max_tasks` | `4` | 同时运行的独立任务组数量（1–32） |
 | `toolchain_paths` | `[]` | 允许 Codex 沙箱**只读**访问的额外绝对路径，例如安装在特殊位置的工具链。系统运行时和 Codex 可执行文件本身已经可读 |
 | `approval_relay` | `false` | 设为 `true` 时，主代理可以代你*批准*请求。除非你完全信任主代理，否则请保持关闭。*Approve for me* 不需要它 |
@@ -73,6 +73,23 @@ python3 server.py --config ~/.config/codex-mcp/config.toml stop
 ```
 
 修改配置文件后，运行 `stop` 并重启 MCP 客户端。正在运行的 broker 会拒绝使用不同配置的客户端。
+
+## Codex 主目录与状态文件夹
+
+加载配置时，服务器会固定实际生效的 Codex 主目录，并把它纳入 broker 的身份标识。实际生效的主目录是环境变量 `CODEX_HOME`；未设置或为空时为 `~/.codex`。路径中的 `~` 会被展开，相对路径按 MCP 客户端启动时所在的文件夹解析，符号链接也会被解析。在 Windows 上不区分字母大小写。因此，指向同一文件夹的不同写法都算同一个主目录。broker 及其启动的 Codex 进程都使用这个固定的主目录。拒绝包含 Codex `auth.json` 的项目文件夹时，检查的也是同一个主目录。
+
+一个 broker 只服务一个状态文件夹。如果客户端实际生效的主目录与正在运行的 broker 不同，在任何工具运行前就会以 `broker_identity_mismatch`（`retryable: false`，`uncertain: false`）拒绝：
+
+```text
+The running broker uses a different Codex home (CODEX_HOME). Stop it with `python server.py stop` (add the same --config option if you use one), then retry. Use separate state directories (state_dir) to run different Codex homes at the same time.
+```
+
+其他身份差异（版本或其他设置不同），以及与 0.2.3 或更早版本的 broker 不一致时，仍保持通用提示：``A broker started by a different version or configuration is still running for this state directory. Stop it with `python server.py stop` (add the same --config option if you use one), then retry``。普通工具错误绝不会包含主目录路径；`server.py stop` 和 broker 的健康报告在主目录不一致时仍可正常使用。
+
+- **同时使用两个 Codex 主目录：** 使用两个具有不同绝对 `state_dir` 的配置文件，并用各自的 `--config` 启动每个 MCP 客户端。
+- **把一个状态文件夹切换到另一个主目录：** 先运行 `python3 server.py --config FILE stop`（未使用配置文件时运行 `python3 server.py stop`），再从另一个主目录重新连接。保存在该状态文件夹中的任务仍指向旧主目录里的对话，新主目录中的 Codex 无法恢复它们，因此建议每个 Codex 主目录单独使用一个状态文件夹。
+
+在同一个主目录内更换登录账号不会被检测到，因为主目录相同，身份标识也相同。`CODEX_PROFILE` 不属于身份标识：桥接服务使用自己的权限配置，从不传递 `--profile`。
 
 ## 配置文件的要求
 

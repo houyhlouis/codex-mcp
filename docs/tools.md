@@ -121,7 +121,7 @@ Some errors add fields, for example `native_code` when Codex itself refused the 
 | Code | Meaning | What to do |
 |---|---|---|
 | `operation_uncertain` | An earlier attempt with this key may or may not have taken effect | Inspect with `codex_get` and `codex_events`, then use a new key if work is still needed |
-| `native_timeout` | Codex did not acknowledge the request in time | Inspect the task. A read can simply be repeated |
+| `native_timeout` | Sending a message to Codex or waiting for its reply exceeded the 30-second limit (`uncertain: false` if nothing was sent yet; otherwise `uncertain: true`) | See [Timeouts talking to Codex](#timeouts-talking-to-codex). Read-only tools stay retryable |
 | `transport_unavailable` | The connection to the broker or to Codex was lost | Reconnect, inspect the task, then `codex_resume` |
 | `native_protocol_incompatible` | Codex sent a message this version cannot handle safely | Check `codex_status` and `codex_history` |
 | `internal_error` | An unexpected failure inside the server | Inspect the task before repeating anything; look at `broker.log` |
@@ -137,7 +137,7 @@ Some errors add fields, for example `native_code` when Codex itself refused the 
 
 | Code | Meaning | What to do |
 |---|---|---|
-| `broker_identity_mismatch` | The running broker was started by a different version or with different settings | Run `server.py stop` with the same `--config`, then retry |
+| `broker_identity_mismatch` | The running broker was started by a different version, with different settings, or with a different effective Codex home (`CODEX_HOME`) (`retryable: false`, `uncertain: false`, refused before any tool runs) | Run `server.py stop` with the same `--config`, then retry; use a separate `state_dir` per Codex home (see [configuration](configuration.md#codex-home-and-state-folders)) |
 | `broker_identity_unchecked` | The running broker is too old to say how it was started | Stop it with the version that started it |
 | `state_newer_schema` | The database was written by a newer version | Use the newer version. Nothing was changed |
 | `state_migration_failed` | The database could not be upgraded. The old data is intact | Keep the state folder and its backup, and report the problem |
@@ -151,16 +151,30 @@ Some errors add fields, for example `native_code` when Codex itself refused the 
 | `maintenance_failed` | Cleanup failed. `applied` says whether anything was removed | Keep the state folder and make a new plan |
 | `bridge_error` | Any other refusal | Read the message |
 
+#### Timeouts talking to Codex
+
+Every request to Codex has one 30-second limit that covers waiting to send, sending, and waiting for the answer. Answers to Codex's own requests (for example approval decisions) and other messages also have a 30-second limit for sending. There is no separate setting or tool argument. All three cases return `native_timeout`:
+
+| When the limit is reached | Message | What it means |
+|---|---|---|
+| Before anything was sent | `Codex native message timed out before it was sent` | Nothing reached Codex. `retryable: true`, `uncertain: false`, `next_steps: ["Refresh task or request state before retrying"]`. An approval answer that could not be sent stays `pending`; answer it again (authority and `proposal_hash` are checked again) |
+| While sending | `Codex native write timed out. The outcome is uncertain.` | Codex may or may not have received it (`uncertain: true`). The server closes its connection to Codex and recovers as after a disconnect: tasks that were running need `codex_resume`. This affects all tasks that use that connection, and the action is never repeated automatically. An approval answer in this state expires, and `codex_get` with `view: "permissions"` shows `decision_receipts[].delivery: "uncertain"` |
+| After sending, waiting for the answer | `Codex {method} response timed out; action outcome may be uncertain. Do not blindly retry` (with the method name filled in) | Unchanged from 0.2.3. `uncertain: true`, `next_steps: ["Inspect codex_get and codex_history; do not blindly retry"]`. The connection stays open, other requests continue, and a late answer is ignored |
+
+Read-only tools stay retryable as before. When the connection fails or changes while sending or waiting, the existing `transport_unavailable` errors apply (for example `Codex connection failed during native write` or `Codex connection changed during native write`).
+
 ## Projects, status and models
 
 | Tool | Required | Optional (default) | Returns |
 |---|---|---|---|
-| `codex_status` | none | `requests_cursor`, `requests_limit` (50) | Codex version, sign-in type (no credentials), the state database's schema version, pending requests, event cursor. Starts Codex if needed |
+| `codex_status` | none | `requests_cursor`, `requests_limit` (50, 1–200) | Codex version, sign-in type (no credentials), the state database's schema version, pending request summaries (up to `requests_limit` per page), event cursor. Can start the local broker and Codex if needed |
 | `codex_projects` | `path` for `select`/`create` | `action` (`list`), `offset` (0), `limit` (100) | Previously selected projects, or the selected/created project with its `project_id` |
 | `codex_models` | none | `cursor`, `limit` (100) | Model catalog page: model IDs, supported and default reasoning efforts, service tiers, `nextCursor` |
 | `codex_usage` | none | none | Account rate limits and remaining allowance. Read-only |
-| `codex_capabilities` | `task_id` | none | Collaboration modes, permission profiles and direct-input capability for a task |
-| `codex_skills` | `task_id` | `force_reload` (false) | Skills available in the task's project |
+| `codex_capabilities` | `task_id` | none | Collaboration modes, permission profiles and whether a child accepts direct input (`can_accept_direct_input`; if `false`, use `codex_delegate` on the child's parent) |
+| `codex_skills` | `task_id` | `force_reload` (false) | Skills available in the task's project. `force_reload: true` asks native Codex to refresh its skill list after skills changed |
+
+To continue pending requests returned by `codex_status`, call `codex_requests` with `pending_requests_next_cursor` as `cursor` (without `task_id`).
 
 ### Compatibility information
 
@@ -177,20 +191,24 @@ Some errors add fields, for example `native_code` when Codex itself refused the 
 
 If a tool needs an optional Codex feature that the installed Codex does not have, it fails with `optional_native_capability_unavailable: METHOD is unavailable in VERSION`, followed by what to do next. Nothing is left half-started. Use another control, or install a tested Codex version and run `server.py stop`.
 
-`codex_projects` with `create` makes an ordinary directory. It does not clone repositories, run `git init` or install dependencies; worktrees are made with [`codex_worktrees`](#worktrees). A model listed in the catalog may still be unavailable to your account; such a failure is reported by the turn.
+`codex_projects` with `list` shows registered projects (paged with `offset` and `limit`), and `select` registers an existing directory. `create` makes an ordinary directory if it is missing and also accepts an existing folder. It does not clone repositories, run `git init` or install dependencies; worktrees are made with [`codex_worktrees`](#worktrees). A model listed in the catalog may still be unavailable to your account; such a failure is reported by the turn.
 
 ## Tasks
 
 | Tool | Required | Optional (default) | What it does |
 |---|---|---|---|
-| `codex_start` | `prompt`, `request_id`, and exactly one of `workdir` or `project_id` | `model`, `effort`, `access` (`write`), `approval_mode` (`inherit`), `collaboration_mode` (`default`), `service_tier`, `name`, [rich input](#rich-input) | Creates a persistent conversation and starts the first turn. Returns immediately |
-| `codex_send` | `task_id`, `prompt`, `request_id` | `mode` (`follow_up`), `expected_turn_id`, `model`, `effort`, [rich input](#rich-input) | Starts a follow-up turn, or with `mode: "steer"` adds input to the running turn |
+| `codex_start` | `prompt`, `request_id`, and exactly one of `workdir` or `project_id` | `model`, `effort`, `access` (`read` or `write`, default `write`), `approval_mode` (`inherit`), `collaboration_mode` (`default`), `service_tier`, `name`, [rich input](#rich-input) | Creates a persistent conversation with `read` or `write` project access and starts the first turn. Returns immediately |
+| `codex_send` | `task_id`, `prompt`, `request_id` | `mode` (`follow_up`), `expected_turn_id`, `model`, `effort`, [rich input](#rich-input) | With `mode: "follow_up"` (default), starts another turn. With `mode: "steer"`, adds input to the running turn (needs `expected_turn_id`; refuses `model`, `effort` and a non-empty `output_schema`) |
 | `codex_interrupt` | `task_id`, `expected_turn_id`, `request_id` | none | Asks Codex to stop the turn. Poll until the status is `interrupted` |
 | `codex_resume` | `task_id`, `request_id` | none | Reloads a saved conversation after a restart. Never replays a prompt |
 | `codex_list` | none | `offset` (0), `limit` (50), `view` (`default`) | Tasks, newest first |
 | `codex_get` | `task_id` | `view` (`default`, `compact`, `result`, `artifact`, `reconciliation` or `permissions`), `turn_id`, `result_id`, `artifact_id`, `offset`, `limit`, `requests_cursor`, `requests_limit` (50), `subagents_offset` (0), `subagents_limit` (50), `claims_offset` (0), `claims_limit` (100) | Status, latest summary, changed files, last 100 commands with exit codes, plan, usage, pending requests, subagents, and what still reserves the project |
 
 `summary` is the latest message written by Codex and can be an interim message while work is running. A command's exit code 0 does not by itself prove that all requested tests passed; read the output and the final report.
+
+**Steering (`codex_send` with `mode: "steer"`).** Pass the running turn's ID as `expected_turn_id`. Without it, the call fails with `stale_turn` (`Steering requires the current active expected_turn_id`). `model`, `effort` and a non-empty `output_schema` are refused when steering (`state_conflict`: `Change model/effort on a follow-up turn, not during steering`). An empty `{}` schema is ignored.
+
+**`codex_get` views and paging.** `default` and `compact` read the task record (see [Compact view](#compact-view)). `result` reads one turn's evidence (`turn_id` or the current turn, kept on the same revision across pages with `result_id`). `permissions` returns `decision_receipts`, `permission_view` and `receipts_next_offset`. For both `result` and `permissions`, `offset` and `limit` count records (default 50, at most 200). `artifact` needs `artifact_id`, and there `offset` and `limit` count bytes (default 65,536, at most 262,144). `reconciliation` reads the [recovery report](#the-reconciliation-report). Pending requests, children and project reservations have their own paging controls: `requests_cursor` / `requests_limit`, `subagents_offset` / `subagents_limit` and `claims_offset` / `claims_limit`, continued with `pending_requests_next_cursor`, `subagents_next_offset` and `workspace_claims_next_offset`.
 
 ### Fields in a task record
 
@@ -230,7 +248,7 @@ Without `turn_id`, the current turn is used. The record is returned in `result`:
 | `evidence_completeness` | `complete`, and the `gaps` when something is missing |
 | `counts`, `next_offset` | Totals, and where the next page starts |
 
-Each observed item has a `source` with the sequence number of the journal event it was taken from. The lists are paged together with `offset` and `limit` (50 by default, 200 at most). When you read more than one page, pass the `result_id` of the first page, so that all pages come from the same version.
+Each observed item has a `source` with the sequence number of the journal event it was taken from. The lists are paged together with `offset` and `limit`, which count records (50 by default, 200 at most). Pass the returned `result_id` with the next `offset` to keep reading the same revision.
 
 **Artifacts.** Content larger than 16 KiB is not put into the record. The record holds a reference instead: `artifact_id`, `kind`, `sha256`, `size_bytes` and, for a file, its relative `path`. Read the content with:
 
@@ -238,7 +256,7 @@ Each observed item has a `source` with the sequence number of the journal event 
 {"task_id": "TASK", "view": "artifact", "artifact_id": "ARTIFACT", "offset": 0}
 ```
 
-The result has an `artifact` object with `data` (base64), `sha256`, `size_bytes` and `next_offset`. Call again with `offset` set to `next_offset` until it is `null`. One call returns 65,536 bytes by default and 262,144 at most.
+The result has an `artifact` object with `data` (base64), `sha256`, `size_bytes` and `next_offset`. Call again with `offset` set to `next_offset` until it is `null`. Here `offset` and `limit` count bytes (65,536 by default, 262,144 at most). Without `artifact_id`, the error is `invalid_arguments` (`codex_get view=artifact: argument artifact_id is required`).
 
 | Kind | Meaning |
 |---|---|
@@ -246,7 +264,7 @@ The result has an `artifact` object with `data` (base64), `sha256`, `size_bytes`
 | `live_file` | A changed file that is read from the project when you ask for it. If the file has changed since the turn, the call fails with `artifact_version_mismatch` and returns nothing, so you never get different content under the same reference |
 
 - Only files that Codex reported changing in that task can become artifacts. There is no argument for a file path.
-- Text is redacted like every other result. `content_redacted` tells you when that happened, and `sha256` is the hash of the bytes you receive.
+- Text is redacted like every other result (valid UTF-8 text, and JSON text field by field). Content that is not valid UTF-8 (such as an image or another binary file) is stored and returned byte for byte without redaction, with `content_redacted` set to `false`. `content_redacted` tells you when text was redacted, and `sha256` is the hash of the bytes you receive.
 - One artifact holds at most 32 MiB. Larger content is marked `content_omitted: true`, and the record is marked incomplete.
 - For a turn that finished before the update to 0.2.0, the record is built the first time you ask for it. It is marked incomplete with the gap `historical_evidence`, and no file content is captured for it.
 - After old data has been [cleaned up](installation.md#backing-up-and-cleaning-up), a result can be gone. The call then fails with `result_expired`.
@@ -283,7 +301,7 @@ Read it this way:
 | Tool | Required | Optional (default) | Returns |
 |---|---|---|---|
 | `codex_events` | none | `task_id`, `after` (0), `limit` (100), `wait_seconds` (0, max 25), `view` (`default`, `compact` or `outcome`), `task_ids`, `cursors`, `tasks_offset`, `include_descendants` (true), `requests_cursor`, `requests_limit` (50), `event_seq`, `event_offset` | Journal events after the cursor, the next `cursor`, `has_more`, and the current pending requests |
-| `codex_history` | `task_id` | `kind` (`turns` or `items`), `cursor`, `limit` (50), `turn_id` | Codex's own persisted history, for recovery after an outage |
+| `codex_history` | `task_id` | `kind` (`turns` or `items`, default `turns`), `cursor`, `limit` (50), `turn_id` | Codex's own persisted history, for recovery after an outage. `kind: "turns"` lists turn summaries; `kind: "items"` lists the items of one turn, chosen with `turn_id` set to a row's `id` from a `turns` page |
 | `codex_diff` | `task_id` | none | The diff and file list that Codex reported for the current turn, with `diff_turn_id` (not an independent Git diff). A diff from an earlier turn is never shown as the current one |
 
 **Turns inside a turn.** Codex runs an inline code review as a turn inside the turn that asked for it. The task, its results and artifacts, plan steps and budgets always use the outer turn, so a review counts as one turn and finishes when the outer turn finishes. In `codex_history`, each turn keeps Codex's own `id` and `rootTurnId` and adds `logical_turn_id`: the outer turn's ID when that turn belongs to the same task, otherwise the turn's own `id`. Pass `logical_turn_id` to `codex_revert`.
@@ -299,7 +317,7 @@ How to use event cursors:
 - Pending requests are part of every page, so missed notifications cannot hide them. At most `requests_limit` are included. If `pending_requests_has_more` is true, call again with `requests_cursor` set to `pending_requests_next_cursor`.
 - If Codex produces output faster than it can be stored, some streamed text and output deltas are skipped, and a `bridge/event_gap` event says how many (`dropped_events`). Approvals, completed items and final results are never skipped. `codex_history` has the complete output.
 - A `bridge/protocol_error` event means that Codex sent a message this version does not understand. The affected task becomes `needs_resume`. Call `codex_resume` and check `codex_history` before continuing.
-- An event that is too large for one page arrives in pieces. The page then contains `fragment`, `fragment_complete: false`, `event_seq` and `next_event_offset`. Keep `after` unchanged and call again with that `event_seq` and with `event_offset` set to `next_event_offset`, until `fragment_complete` is true. Only then use the new `cursor`.
+- An event that is too large for one page arrives in pieces. The page then contains `fragment`, `fragment_complete: false`, `event_seq` and `next_event_offset`. Keep `after` and `event_seq` the same and pass the returned `next_event_offset` as the argument `event_offset`, until `fragment_complete` is `true`. Only then use the new `cursor`.
 
 ### Compact view
 
@@ -322,7 +340,7 @@ A good pattern is to poll with `view: "compact"` and to read the full record onc
 {"view": "outcome", "task_ids": ["TASK"], "wait_seconds": 25}
 ```
 
-The result has one entry per task in `outcomes` (status, turn, counts, whether there is a diff or an error, and whether the evidence is complete), the current `pending_requests`, and a `cursors` object. Pass that object back unchanged in the next call. The call then returns as soon as one of the tasks changes, or after `wait_seconds`:
+The result returns a coalesced state for `task_ids` in `outcomes` (status, turn, counts, whether there is a diff or an error, and whether the evidence is complete), the current `pending_requests`, and opaque `cursors`. Pass `cursors` back unchanged on the next call, separately from the detailed replay with `after`. The call then returns as soon as one of the tasks changes, or after `wait_seconds`:
 
 ```json
 {"view": "outcome", "task_ids": ["TASK"], "cursors": {"TASK": "CURSOR_FROM_THE_LAST_RESULT"}, "wait_seconds": 25}
@@ -341,10 +359,10 @@ The result has one entry per task in `outcomes` (status, turn, counts, whether t
 | Tool | Required | Optional (default) | What it does |
 |---|---|---|---|
 | `codex_requests` | none | `task_id`, `cursor`, `limit` (50) | Lists pending questions and approvals, including those from subagents. Returns `requests`, `next_cursor`, `has_more` and `total` |
-| `codex_respond` | `request_id`, `response` | `proposal_hash` | Sends a validated answer. See [response formats](#response-formats-for-codex_respond). `proposal_hash` is needed only to accept a file approval |
-| `codex_review_request` | `request_id` | `offset`, `limit` (65536) | Shows the request to the human through the client's form prompt. Without prompt support, it returns `status: "pending"` and the request must be reviewed in a terminal. With `offset`, it returns the full request in pages instead; see [Large requests](#large-requests) |
+| `codex_respond` | `request_id`, `response` | `proposal_hash` | Sends a validated answer to a pending guidance or review request; `response` must match the request kind, and no answer form grants authority. See [response formats](#response-formats-for-codex_respond). `proposal_hash` is needed only to accept a file approval |
+| `codex_review_request` | `request_id` (or `pending_request_id`) | `offset`, `limit` (65536, max 262144) | Without `offset`, asks the client to show a human-review form and may relay that person's decision. Without form support, the request stays `pending` (review with `server.py review REQUEST_ID`, or deny with `codex_respond`). With `offset`, only reads the request's details in pages and never opens a prompt; see [Large requests](#large-requests) |
 
-Each pending request also carries `pending_request_id` (the same value as `id`), `content_redacted` and `redaction_count`. `content_redacted: true` means that the server replaced something that looked like a credential with `[REDACTED]` before showing the request; `redaction_count` says how many values were replaced. The request that Codex acts on is not changed.
+In `codex_respond` and `codex_review_request`, `request_id` (or `pending_request_id`) is the pending request's ID from `codex_requests`, `codex_events` or `codex_status`. Each pending request also carries `pending_request_id` (the same value as `id`), `content_redacted` and `redaction_count`. `content_redacted: true` means that the server replaced something that looked like a credential with `[REDACTED]` before showing the request; `redaction_count` says how many values were replaced. The request that Codex acts on is not changed.
 
 ### What a request would allow, and who decided
 
@@ -360,7 +378,7 @@ Every pending request carries a `permission_summary`, and its full form (through
 
 This is an explanation. It grants nothing, and Codex still enforces its own rules.
 
-`codex_get` with `view: "permissions"` shows the settings of a task (what was requested, what is in effect, and what a subagent inherited from its parent) and the task's **decision receipts**:
+`codex_get` with `view: "permissions"` returns `decision_receipts`, `permission_view` and `receipts_next_offset` (`offset` and `limit` count records: default 50, at most 200). It shows the settings of a task (what was requested, what is in effect, and what a subagent inherited from its parent) and the task's **decision receipts**:
 
 ```json
 {"task_id": "TASK", "view": "permissions"}
@@ -388,17 +406,32 @@ Positive approvals need the human prompt, the terminal (`server.py review REQUES
 
 A small request is returned in full. A request larger than 4 KiB, such as a big patch, is returned as a summary: its ID, kind, sizes, a 512-character `preview`, `details_truncated: true` and, for file approvals, `proposal_revision` and `proposal_hash`.
 
-To read the whole request, call `codex_review_request` with `offset: 0`. The result has `detail` (one piece of the request as JSON text), `next_offset`, `detail_total_chars`, `detail_sha256` and `detail_complete`. Call again with `offset` set to `next_offset` until `detail_complete` is true. Called this way, the tool never opens a prompt.
+`codex_review_request` has two modes:
 
-The human prompt and the terminal review always load the complete request first. If it is too large to show in the client's prompt, the prompt offers no way to accept, and the request must be reviewed in a terminal.
+- **With `offset` (read details).** Start at `offset: 0`. The tool only reads the pending request's details and never opens a prompt. Each page holds up to `limit` characters (default 65,536, at most 262,144). The result has `detail` (one piece of the request as JSON text), `next_offset`, `detail_total_chars`, `detail_sha256` and `detail_complete`. Call again with `offset` set to `next_offset` until `next_offset` is `null`. Join the `detail` pieces in order. The joined text must have `detail_total_chars` characters, and its SHA-256 (encoded as UTF-8) must equal `detail_sha256`. `detail_complete` is `true` only when one page holds the whole request. For a longer request it is `false` on every page, including the last; do not wait for it.
+- **Without `offset` (human review).** The tool asks the MCP client to show a human-review form and may relay that person's decision. Clients on older MCP versions get a form through `elicitation/create`. MCP 2026-07-28 clients get an input request (`resultType: "input_required"`). If the client cannot show forms, the request stays `pending`; review it in a terminal with `server.py review REQUEST_ID`, or deny it with `codex_respond`.
+
+The human prompt and the terminal review always load and verify the complete request first. If that check fails during a human review, acceptance is refused with `invalid_response` (`Request detail integrity check failed; acceptance is disabled`). If the request is too large to show in the client's prompt, the prompt offers no way to accept, and the request must be reviewed in a terminal.
 
 ## Settings and subagents
 
 | Tool | Required | Optional (default) | What it does |
 |---|---|---|---|
-| `codex_settings` | `task_id`; `request_id` for changes | `scope` (`get`, `next`, `current`), `expected_turn_id`, `model`, `effort`, `approval_mode` (`ask`/`approve_for_me`), `collaboration_mode` (`default`/`plan`), `service_tier`, `access` (`read`/`write`), `budget` | Reads or changes settings. `current` applies to the running turn only and cannot change access or collaboration mode. `budget` sets the [family budget](#family-usage-and-budgets) (root task, `scope: "next"`) |
-| `codex_delegate` | `task_id`, `prompt`, `request_id` | `expected_turn_id` (required if the parent is running; refused with `stale_turn` if that turn has ended), `contract` | Asks the parent to spawn or control its native subagents. `contract` is described under [structured questions and delegation contracts](#structured-questions-and-delegation-contracts) |
-| `codex_subagents` | `task_id` | `cursor`, `limit` (50), `refresh` (true), `archived` (false), `offset` (0) | Discovers and verifies native descendants and returns their task IDs. To page through children that are already known, use `refresh: false` with `offset` and the returned `next_offset` |
+| `codex_settings` | `task_id`; `request_id` for changes | `scope` (`get`, `next`, `current`), `expected_turn_id`, `model`, `effort`, `approval_mode` (`ask`/`approve_for_me`), `collaboration_mode` (`default`/`plan`), `service_tier`, `access` (`read`/`write`), `budget` | Reads or changes settings (`model`, `effort` and `service_tier` come from `codex_models`). `current` applies to the running turn only (needs `expected_turn_id`) and cannot change access, collaboration mode or budget; `next` applies to future turns. Existing pending approvals keep their reviewer. `budget` sets the [family budget](#family-usage-and-budgets) (root task, `scope: "next"`) and applies at once |
+| `codex_delegate` | `task_id`, `prompt`, `request_id` | `expected_turn_id` (required if the parent is `running` or `waiting`; refused with `stale_turn` if that turn has ended), `contract` | Asks the parent to spawn or control its native subagents; the parent decides whether to use them, and children are found with `codex_subagents`. `contract` is described under [structured questions and delegation contracts](#structured-questions-and-delegation-contracts) |
+| `codex_subagents` | `task_id` | `refresh` (true), `archived` (false), `limit` (50, 1–200), `offset` (0), `cursor` (leave out on the first call) | Discovers and lists verified native descendants of the parent task. Returns `subagents`, `nextCursor`, `next_offset`, `note` and `next_steps` |
+
+**Paging `codex_subagents`** has two steps:
+
+1. **Discovery (`refresh: true`, the default).** Call without `cursor`, then call again with `cursor` set to the returned `nextCursor` until `nextCursor` is `null`. These calls find and verify new native children. Their `subagents` list is only a snapshot of the local list and can repeat the same children from page to page; `note` says so.
+2. **Listing (`refresh: false`).** Call with `refresh: false` and `offset: 0`, then with `offset` set to `next_offset` until `next_offset` is `null`. This returns every verified child once, including children that are known locally but not listed by Codex.
+
+- **Follow `next_steps`.** It holds the exact next call, for example `[{"tool": "codex_subagents", "arguments": {"task_id": "...", "limit": 50, "archived": false, "refresh": false, "offset": 0}}]`, or `[]` when the list is complete. It switches from discovery to listing by itself.
+- **Short pages.** A page is kept under about 6 MiB, so it can return fewer than `limit` children when their records are large. `next_offset` then continues after the last child returned.
+- **Changing lists.** Offsets can shift if children are added or archived while you are listing. Start again from `offset: 0` if you need an exact result.
+- **Archived children.** `archived: true` lists previously verified archived children. Archived native threads that were never verified are not loaded.
+
+Each child has `can_accept_direct_input`. When it is `false`, use `codex_delegate` on that child's parent (`parent_task_id`). Parent `codex_events` and `codex_requests` also show the children's requests. `codex_get` pages child summaries separately with `subagents_offset`, `subagents_limit` and `subagents_next_offset`.
 
 `approval_mode` values: `inherit` (start only; keep Codex's configured reviewer), `ask` (human reviewer), `approve_for_me` (Codex's automatic reviewer `auto_review`). `codex_settings` refuses `inherit` with `invalid_arguments`; choose one of the other two there. Service tiers must be offered by the chosen model; `default` clears a tier.
 
@@ -431,7 +464,7 @@ The task record then shows `delegation_contract` with its `delivery` state (`ack
 {"request_id": "PENDING_ID", "response": {"text": "Use option B; it keeps the public API.", "decision": {"version": 1, "id": "ID_FROM_THE_REQUEST", "context_hash": "HASH_FROM_THE_REQUEST", "option_id": "b"}}}
 ```
 
-- `id` and `context_hash` must be the ones from the request, and `option_id` one of the offered options. Otherwise the answer is refused with `decision_mismatch` and the question stays open.
+- `id` and `context_hash` must be the ones from the request, and `option_id` one of the offered options; `rationale` is optional. Otherwise the answer is refused with `decision_mismatch` and the question stays open.
 - After the deadline, choosing an option is refused with `decision_expired`, so that a decision is never applied late. A plain-text answer is still possible, for example to tell Codex that the decision window has passed.
 - This structure is guidance only. It can be used on questions to the main agent and on delegations, never on approvals, permissions or questions for the user, and it grants nothing.
 
@@ -457,7 +490,7 @@ The reasons in `gaps` say what is missing, for example `not_counted_before_upgra
 {"task_id": "TASK", "scope": "next", "request_id": "budget-1", "budget": {"max_turns": 20, "max_active_seconds": 3600, "max_tokens": 2000000}}
 ```
 
-`{}` removes the budget, and `scope: "get"` shows it. The settings file can give every new family a default budget (see [configuration](configuration.md)), which is also how a family gets a budget for its very first turn.
+A budget sets lifetime caps for the family and applies at once. `{}` removes the budget, and `scope: "get"` shows it. The settings file can give every new family a default budget (see [configuration](configuration.md)), which is also how a family gets a budget for its very first turn.
 
 | Field | Kind | What happens |
 |---|---|---|
@@ -491,31 +524,31 @@ All of these need `task_id` and `request_id`. Most require the task family to be
 
 | Tool | Extra arguments | What it does |
 |---|---|---|
-| `codex_review` | `target` (`uncommittedChanges`, `baseBranch` + `branch`, `commit` + `commit`, `custom` + `instructions`) | Starts a native code-review turn |
+| `codex_review` | `target` (`uncommittedChanges` by default, which needs no extra target argument; `baseBranch` + `branch`; `commit` + `commit`; `custom` + `instructions`) | Starts a native code-review turn. Approval requests are answered with `codex_review_request` or `codex_respond`, not `codex_review`: code review and human review are different things |
 | `codex_fork` | `name`, `last_turn_id` (optional) | Copies the conversation history into a new task. Does not start work |
 | `codex_rename` | `name` | Renames the conversation |
 | `codex_archive` | `action` (`archive` or `unarchive`) | Archives or restores the conversation and its subagents |
 | `codex_delete` | `confirm_thread_id` (must equal the task's `thread_id`; for a task that [never reached Codex](#a-task-that-never-reached-codex), its task ID) | Permanently deletes the native conversation and subagents. The bridge's audit records remain. Also removes a task whose conversation [no longer exists in Codex](#a-task-whose-conversation-is-gone) |
 | `codex_compact` | none | Compacts the conversation history. May use model quota |
-| `codex_revert` | `before_turn_id` (a `logical_turn_id` from `codex_history`), `confirm_history_only: true` | Removes that turn and all later turns from the conversation. **Does not revert files** |
-| `codex_queue` | `action` (`list`, `add`, `update`, `delete`, `reorder`, `start`), `prompt`, `queued_id`, `ordered_ids`, `cursor`, `limit`, rich input | Manages queued instructions. `list` needs no `request_id`. An idle task may consume an added entry immediately |
-| `codex_terminals` | `action` (`list`, `terminate`, `clean`), `process_id`, `cursor`, `limit` | Lists or stops the task's background processes. `list` needs no `request_id` |
-| `codex_goal` | `action` (`get`, `set`, `clear`), `objective`, `status`, `token_budget`, `user_requested` | Native persistent goal. Changes require `user_requested: true` and must come from an explicit user request |
-| `codex_sessions` | `workdir` or `project_id`; `action` (`list`, `import`), `thread_id`, `confirm_stopped`, `cursor`, `limit`, `archived` | Lists or imports existing Codex CLI conversations from exactly this project. Import requires `confirm_stopped: true` |
+| `codex_revert` | `before_turn_id` (a `logical_turn_id` from `codex_history`), `confirm_history_only: true` | Removes that turn and all later turns from the conversation. **Does not revert files**; the bridge's local event audit stays. With `confirm_history_only: false`, fails with `invalid_arguments`: `Confirm that this removes conversation history, not filesystem changes` |
+| `codex_queue` | `action` (`list`, `add`, `update`, `delete`, `reorder`, `start`), `prompt`, `queued_id`, `ordered_ids`, `cursor`, `limit`, [rich input](#rich-input) | Manages Codex's native queued instructions (`list` needs no `request_id`). An added entry may run immediately. `start` uses the conversation's settings. `update` needs `prompt` as well as `queued_id` (otherwise `invalid_arguments`: `codex_queue action=update: argument prompt is required`) |
+| `codex_terminals` | `action` (`list`, `terminate`, `clean`), `process_id`, `cursor`, `limit` | Lists or stops the task's background processes: `terminate` stops one `process_id`, and `clean` stops all of that task's background processes. No shell execution or stdin input. `list` needs no `request_id` |
+| `codex_goal` | `action` (`get`, `set`, `clear`), `objective`, `status`, `token_budget`, `user_requested` | Native persistent goal: `get` reads it (no `request_id` needed), `set` takes `objective`, `status` or `token_budget`, and `clear` removes it. An active goal can keep Codex working and consume usage. `token_budget` is the native goal's own budget, separate from the [family budget](#family-usage-and-budgets) set with `codex_settings`. Neither is a cap on total cost. `set` and `clear` need an explicit human instruction, `user_requested: true` and `request_id` (otherwise `user_request_required`: `Goal mutations require an explicit user request; do not infer one from a coding task`) |
+| `codex_sessions` | `workdir` or `project_id`; `action` (`list`, `import`), `thread_id`, `confirm_stopped`, `cursor`, `limit`, `archived` | Lists or imports native Codex conversations (from the Codex CLI, the VS Code extension, `codex exec` or an app-server client) started in exactly this project. Import takes a root `thread_id` (as a bridge task), checks native scope before work, and requires `confirm_stopped: true` (stopped in all other Codex clients); with `confirm_stopped: false`, fails with `invalid_arguments`: `Confirm that this conversation is stopped in other Codex clients before importing it` |
 
 ## Worktrees
 
 To let two tasks work on the same repository at the same time, each needs its own folder. A Git worktree is such a folder: a second checkout of the same repository on its own branch. `codex_worktrees` prepares one, registers it as a project, and turns the result of a task into a patch you can review. It never merges, pushes, deletes unsaved work or forces anything.
 
-The tool is off by default. Turn it on with `worktrees = true` in the [settings file](configuration.md) and restart the broker. Git 2.36 or newer is needed.
+All actions except `inspect` are off by default. `inspect` stays available when the setting is off; other actions fail with `worktrees_disabled` (`Managed worktree actions require worktrees = true in the settings file; inspect remains available`). Turn them on with `worktrees = true` in the [settings file](configuration.md) and restart the broker. Git 2.36 or newer is needed.
 
 | `action` | Arguments | What it does |
 |---|---|---|
 | `plan` | `repo` (absolute path) or `project_id`; `name` (1–64 letters, digits, `.`, `_` or `-`; not starting with `.` or `-`, without `..`, not ending with `.` or `.lock`); `base` (`HEAD`) | Shows what would be created: folder, branch `codex/NAME`, base commit, shared Git directory, and a `plan_id`. Changes nothing |
 | `create` | the same as `plan`, plus `plan_id` and `request_id` | Creates the worktree if nothing has changed since the plan, and returns its `project_id` |
-| `inspect` | `project_id` or `path` | State of the worktree: branch, head, unsaved changes, the tasks using it, unfinished operations |
+| `inspect` | `project_id` or `path`; `offset` (0), `limit` (50) | State of the worktree: branch, head, unsaved changes, the tasks using it, unfinished operations |
 | `handoff` | `task_id` of a task in the worktree whose turn has finished | Stores the changes since the base as a patch artifact and returns a reference to it |
-| `cleanup` | `project_id`, `request_id`; `keep_branch` (false) | Removes the worktree and its branch |
+| `cleanup` | `project_id`, `request_id`; `keep_branch` (false) | Removes the managed worktree folder and its branch (set `keep_branch: true` to keep the branch) |
 
 The folder is created next to the repository, as `REPO.worktrees/NAME`, unless `worktree_root` names another place. The new project is used like any other: `codex_start` with its `project_id`. Two worktrees of the same repository are different projects and can run at the same time.
 
@@ -543,12 +576,12 @@ A plan lets the main agent describe a few steps and their order once, for exampl
 
 | `action` | Arguments | What it does |
 |---|---|---|
-| `submit` | `spec`, `request_id` | Checks the plan, stores it and starts what can start |
+| `submit` | `spec`, `request_id` | Checks the plan, stores it, and can start real Codex work through normal task admission |
 | `inspect` | `plan_id` | State of every step, what blocks it, and what to do next |
 | `list` | `offset` (0), `limit` (20) | Plans, newest first |
-| `cancel` | `plan_id`, `request_id` | Stops starting new steps and interrupts running ones |
+| `cancel` | `plan_id`, `request_id` | Stops new steps from starting and asks running steps to interrupt. Running steps can still be finishing when `cancel` returns |
 
-A plan (`spec`) has a `name`, `version: 1`, up to 16 `nodes` and `max_parallel` (how many steps may run at once, 1 to 4, default 2):
+A plan (`spec`) requires `version: 1`, a `name` and 1 to 16 `nodes`, plus optional `max_parallel` (how many steps may run at once, 1 to 4, default 2):
 
 ```json
 {"action": "submit", "request_id": "plan-1", "spec": {"version": 1, "name": "parser-fix", "max_parallel": 2, "nodes": [
@@ -560,11 +593,11 @@ A plan (`spec`) has a `name`, `version: 1`, up to 16 `nodes` and `max_parallel` 
 
 | Node field | Meaning |
 |---|---|
-| `id` | A short name: letters, digits, `.`, `_`, `-`, up to 32 characters |
-| `action` | `start` (a new task), `send` (a follow-up) or `review` (a code review) |
-| `target` | For `start`: `{"project_id": ...}` or `{"workdir": ...}`. For `send` and `review`: `{"node": ID}`, an earlier `start` step whose conversation is used |
-| `prompt` | Up to 16 KiB. Must not contain anything that looks like a password, token or key, because the plan stores it until the step runs |
-| `after` | The steps that must have succeeded first |
+| `id` | Required. A short name: letters, digits, `.`, `_`, `-`, up to 32 characters |
+| `action` | Required: `start` (a new task), `send` (a follow-up) or `review` (a code review) |
+| `target` | Required. For `start`: `{"project_id": ...}` or an absolute `{"workdir": ...}`. For `send` and `review`: `{"node": ID}`, naming an earlier `start` step that is also in `after` |
+| `prompt` | Required for `start` and `send` (only `review` may leave out `prompt`), up to 16 KiB. Must not contain anything that looks like a password, token or key, because the plan stores it until the step runs |
+| `after` | Optional list of step `id` values that this step depends on and that must succeed first |
 | `priority` | -10 to 10 (0). Higher starts first; a step that waits long gains priority, so none is starved |
 | `on_failure` | `stop` (default): when this step fails, no further step of the plan starts. `continue`: only the steps that depend on it are skipped |
 | `handoff` | `true` (default): the prompt gets a short list of references to the results of the steps it depends on (task, result and artifact IDs, never their content), which Codex can read with `codex_get` |
@@ -598,12 +631,12 @@ Step reasons you may see in `inspect`:
 
 Accepted by `codex_start`, `codex_send` and `codex_queue` (`add`/`update`):
 
-| Field | Limits |
+| Field | Meaning and limits |
 |---|---|
-| `context_files` | Up to 20 UTF-8 files relative to the project; 256 KiB each, 512 KiB in total |
-| `images` | Up to 10 PNG/JPEG/WebP/GIF files relative to the project; 20 MiB each. Copied to private storage before Codex reads them |
-| `skills` | Up to 10 enabled skill names from `codex_skills` |
-| `output_schema` | JSON Schema for the final answer (start/send only) |
+| `context_files` | Up to 20 project-relative UTF-8 files whose contents are added to the prompt as context; 256 KiB each, 512 KiB in total |
+| `images` | Up to 10 project-relative paths with extension `.png`, `.jpg`, `.jpeg`, `.webp` or `.gif` (any letter case), 20 MiB each. Not URLs or image data. Copied to private storage before Codex reads them |
+| `skills` | Up to 10 names of enabled skills from `codex_skills` (not paths). Each name must identify one enabled skill |
+| `output_schema` | A JSON Schema for the final answer (`codex_start` and follow-up `codex_send` only; a non-empty schema is refused when steering) |
 
 Paths must stay inside the project. Symbolic links are refused.
 

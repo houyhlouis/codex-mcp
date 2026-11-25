@@ -211,7 +211,7 @@ If you installed from a ZIP, run `python3 server.py stop` first, then replace th
 | Anything unclear | Run `python3 server.py doctor`. It checks the installation without starting anything or using a model, and suggests a next step for each problem. See [troubleshooting](docs/troubleshooting.md#run-the-doctor-first). |
 | `Codex executable not found` | Make sure `codex --version` works in a new terminal, or set `codex_binary` to its full path in a [config file](docs/configuration.md). |
 | `codex` does not appear in `/mcp` | Check the path in your client's configuration and run the same command by hand, for example `python3 /path/to/server.py status`. |
-| A broker from a different version or configuration is running | Run `python3 server.py stop` (with the same `--config` if you use one), then retry. |
+| A broker from a different version, configuration or Codex home (`CODEX_HOME`) is running | Run `python3 server.py stop` (with the same `--config` if you use one), then retry. Use one state folder (`state_dir`) per Codex home. |
 | A task is stuck in `waiting` | It is waiting for an answer or approval. Ask the main agent to list pending requests, or run `server.py review REQUEST_ID`. |
 | Something else | See [docs/troubleshooting.md](docs/troubleshooting.md). The private log is `broker.log` in the state folder. |
 

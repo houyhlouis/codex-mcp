@@ -28,9 +28,9 @@ It reports:
 
 - the versions of the server, Python and Codex, and whether your Codex version is a tested one;
 - which Codex program is used and how it was found;
-- the settings file and the state folder, and whether the state folder is private;
+- the settings file, the state folder and the effective Codex home (`CODEX_HOME`), and whether the state folder is private;
 - whether local sockets (named pipes on Windows) work in this environment;
-- whether a broker is running, and whether it was started by a different version or with different settings;
+- whether a broker is running, and whether it was started by a different version, with different settings or with a different Codex home;
 - the state database: its version, its size, a quick integrity check, whether its tables match its version, and the backups found next to it.
 
 | Option | What it adds |
@@ -42,6 +42,16 @@ It reports:
 The exit code is 0 when everything is fine, 1 when there are warnings and 2 when there are errors. If you use a settings file, pass it as in your MCP client configuration: `python3 server.py --config /path/config.toml doctor`.
 
 Run `doctor` in the same environment as your MCP client. A check that passes in your terminal can fail inside a restricted container, and the other way round.
+
+With `--json`, `doctor` records the effective Codex home in three places:
+
+```text
+facts.environment_identity.codex_home    # the client's Codex home
+facts.fingerprint_inputs.codex_home      # the home in the client's identity
+facts.broker.codex_home                  # the running broker's Codex home
+```
+
+When only the home differs, `doctor` reports the error `broker_identity_mismatch` and says `The differences are CODEX_HOME.`, while keeping the warning `broker_environment_mismatch`. For a broker older than 0.2.4, it names the missing `support for checking CODEX_HOME`.
 
 ## Common problems
 
@@ -55,9 +65,12 @@ Run `doctor` in the same environment as your MCP client. A check that passes in 
 | `Task has a native protocol error` | Codex sent a message this version does not understand. Call `codex_resume` and check `codex_history`. If it happens again, your Codex is probably newer than the tested version: look at `compatibility` in the output of `server.py status`. |
 | `Native thread scope is unverified; resume before ...` | The conversation has not been checked against Codex since the last restart or reconnect. Call `codex_resume` for the task, then repeat the action. A pending approval stays pending in the meantime, and you can still deny it. |
 | `Codex connection changed ...; resume before retrying` | Codex restarted while the action was on its way. Call `codex_resume`, check `codex_get`, then decide whether to repeat it. |
+| `Codex native message timed out before it was sent` | Waiting to send to Codex reached the 30-second limit before anything was written (`retryable: true`, `uncertain: false`). Refresh the task or request state before retrying. A pending approval answer that hit this timeout stays `pending`; answer it again. |
+| `Codex native write timed out. The outcome is uncertain.` | Sending to Codex timed out after 30 seconds while writing (`uncertain: true`). The server closed its connection to Codex and recovers as after a disconnect: running tasks need `codex_resume`, and an approval answer in flight has expired (`codex_get` with `view: "permissions"` shows `decision_receipts[].delivery: "uncertain"`). Call `codex_resume` and inspect `codex_get` and `codex_history` before repeating anything. |
 | `Drive-relative approval paths are not supported` | A patch or permission request used a Windows path such as `C:folder\file`. Deny it; Codex should use a path inside the project. |
 | `codex` is missing or failed in `/mcp` / the client's server list | Run the exact command from your client configuration in a terminal (with `status` instead of `serve`) and read the error. Check that the path to `server.py` is absolute. |
-| `A broker started by a different version or configuration is still running` | You updated the code or changed settings. Run `python3 server.py stop` (with the same `--config`, if any) and retry. |
+| `A broker started by a different version or configuration is still running` | You updated the code or changed settings (a broker from 0.2.3 or older also returns this message for any mismatch). Run `python3 server.py stop` (with the same `--config`, if any) and retry. |
+| ``The running broker uses a different Codex home (CODEX_HOME). Stop it with `python server.py stop` (add the same --config option if you use one), then retry. Use separate state directories (state_dir) to run different Codex homes at the same time.`` | The client's effective `CODEX_HOME` differs from the running broker's. Run `python3 server.py stop` (with the same `--config`, if any) and retry, or give each Codex home its own `state_dir`; see [Codex home and state folders](configuration.md#codex-home-and-state-folders). |
 | `Broker failed to start` / `did not become ready` | Read `broker.log` in the state folder. Some locked-down containers forbid Unix sockets. |
 | `Work directory ... missing` / `must be an absolute path` | Pass an absolute path, or let the main agent create the folder with `codex_projects` (`action: "create"`). |
 | `Select a dedicated project directory, not the home directory` | Choose a project subfolder. Your whole home folder or a drive root cannot be a project. |
@@ -181,5 +194,9 @@ The file is written only if the data is still the same as in the preview. The co
 | `--after`, `--limit` | Which events to include: those after a cursor (default 0), 200 by default and 1,000 at most |
 | `--json` | Print JSON |
 | `--output`, `--confirm-preview` | Write the file, after you have seen the preview |
+
+**Request limit and export budgets.** The export contains at most 1,000 requests in total across the selected tasks (events have their own limit, `--limit`, 1,000 at most). When there are more requests, it keeps pending requests first, followed by requests that the selected events refer to. Next come requests of the same turns as the selected events, and then the newest of the rest. When requests were left out, the preview and the file say `"partial": true` and `"omitted_requests": N` (`omitted_requests` is absent when nothing was left out). The plain-text preview says, for example, `1000 requests included (1 omitted)`. The `preview_id` changes when the omitted count changes, so `--confirm-preview` still writes exactly what you saw.
+
+Requests can also be left out to fit the export budget (30,000 structural nodes, nesting depth 24, or 2 MiB), starting from the lowest priority. Those dropped requests are counted in `omitted_requests` as well (with `"partial": true`), even when there were fewer than 1,000 requests. Only when the export still does not fit even without any requests does it fail with `result_too_large`. The message starts with `Incident structure exceeds the export budget` (too many structural nodes or too deep) or `Incident exceeds the 2 MiB export budget` (too many bytes), followed by `. Preview one task with --limit 1 or select a different event window with --after. If that still exceeds the budget, report the bridge version and this error`. If stored data cannot form a valid incident (which should not happen), it fails with `state_invalid`: `Stored data could not form a structural incident. <details>. Run server.py doctor with the same configuration and report the bridge version and this error`. Long request histories no longer fail with `Unsupported or malformed structural incident fixture`.
 
 A maintainer can replay such a file against the simulated Codex and turn it into a test; see [development](development.md#incident-fixtures).

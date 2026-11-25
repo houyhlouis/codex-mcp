@@ -394,7 +394,7 @@ async def diagnose(filename=None, *, start_broker=False, schema=False):
 async def _diagnose(filename=None, *, start_broker=False, schema=False, probe_directory=None, temporary_error=None):
     findings, facts = [], {"python_version": sys.version.split()[0], "supported_mcp_revisions": list(MCP_VERSIONS),
         "minimum_codex_version": CODEX_MIN_VERSION, "tested_codex_versions": list(CODEX_TESTED_VERSIONS),
-        "environment_identity": environment_identity(), "probes": {"start_broker": start_broker, "schema": schema},
+        "probes": {"start_broker": start_broker, "schema": schema},
         "temporary_probes": {"isolated": probe_directory is not None, "removed": probe_directory is None},
         "codex_compatibility": {"version": None, "status": "could_not_check", "reason": "Codex version could not be checked"}}
     if temporary_error is not None:
@@ -482,6 +482,7 @@ async def _diagnose(filename=None, *, start_broker=False, schema=False, probe_di
     enabled = data.get("sandbox_process_check", True)
     probe_config = config or Config(path, state, resolved or "codex",
         sandbox_process_check=enabled if type(enabled) is bool else True)
+    facts["environment_identity"] = environment_identity(probe_config.codex_home)
     try:
         endpoint = probe_config.endpoint if valid_state_value else ""
     except (OSError, ValueError) as exc:
@@ -572,7 +573,8 @@ async def _diagnose(filename=None, *, start_broker=False, schema=False, probe_di
                 if different:
                     facts["broker"]["different_fingerprint_inputs"] = different
                     labels = {"bridge_version": "server version", "config_path": "settings file", "state_dir": "state folder",
-                        "codex": "Codex program", "max_tasks": "max_tasks", "approval_relay": "approval_relay",
+                        "codex": "Codex program", "codex_home": "CODEX_HOME" if "codex_home" in inputs else "support for checking CODEX_HOME",
+                        "max_tasks": "max_tasks", "approval_relay": "approval_relay",
                         "allow_external_tools": "allow_external_tools", "toolchain_paths": "toolchain_paths"}
                     labels["sandbox_process_check"] = "sandbox_process_check"
                     add("error", "broker_identity_mismatch", "A background server started by a different version or with different settings is still running. The differences are "

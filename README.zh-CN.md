@@ -202,7 +202,7 @@ git pull
 | 不确定问题出在哪里 | 运行 `python3 server.py doctor`。它在不启动任何东西、不使用模型的情况下检查安装情况，并为每个问题给出下一步建议。见[故障排查](docs/troubleshooting.zh-CN.md#先运行-doctor)。 |
 | `Codex executable not found` | 确认在新开的终端中 `codex --version` 能运行，或在[配置文件](docs/configuration.zh-CN.md)中把 `codex_binary` 设为完整路径。 |
 | `/mcp` 中没有 `codex` | 检查客户端配置中的路径，并手动运行相同的命令，例如 `python3 /path/to/server.py status`。 |
-| 提示有其他版本或配置的 broker 正在运行 | 运行 `python3 server.py stop`（如使用了 `--config`，请加上相同参数），然后重试。 |
+| 提示有其他版本、配置或 Codex 主目录（`CODEX_HOME`）的 broker 正在运行 | 运行 `python3 server.py stop`（如使用了 `--config`，请加上相同参数），然后重试。每个 Codex 主目录请使用各自的状态文件夹（`state_dir`）。 |
 | 任务一直处于 `waiting` | 它在等待回答或审批。让主代理列出待处理请求，或运行 `server.py review REQUEST_ID`。 |
 | 其他问题 | 见 [docs/troubleshooting.zh-CN.md](docs/troubleshooting.zh-CN.md)。私有日志是状态文件夹中的 `broker.log`。 |
 

@@ -9,7 +9,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "submit: spec/key; inspect: plan_id; list: offset/limit; cancel: plan_id/key. Runs bounded dependency plans through ordinary task admission. Unknown outcomes wait for explicit resume; no side effect is retried.",
+      "description": "submit (spec/key) can start Codex work via ordinary task admission. cancel (plan_id/key) stops new steps and asks running steps to interrupt. Inspect by plan_id, list by offset/limit. Uncertain outcomes await explicit resume.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -54,7 +54,7 @@
             "type": "string"
           },
           "spec": {
-            "description": "Version 1 dependency plan; see the tools documentation.",
+            "description": "{\"version\":1,\"name\":\"job\",\"nodes\":[{\"id\":\"a\",\"action\":\"start\",\"target\":{\"project_id\":\"P\"},\"prompt\":\"Test\"}]}. 1-16 nodes. Optional max_parallel 1-4 (default 2). after lists dependency ids. start targets project_id or absolute workdir. send/review target {\"node\":\"a\"} for start ancestor a. Only review may omit prompt.",
             "type": "object"
           }
         },
@@ -118,7 +118,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Check installed Codex, sign-in type, pending request summaries and broker health.",
+      "description": "Get Codex version, sign-in type, broker health, pending request summaries.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -205,7 +205,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "List selected projects with offset/limit; select/create takes path. The main agent chooses an absolute project directory.",
+      "description": "list(offset/limit) shows registered projects. select registers an existing directory. create makes a plain one.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -233,7 +233,7 @@
             "type": "integer"
           },
           "path": {
-            "description": "Absolute directory to select/create",
+            "description": "Main agent's absolute select/create directory.",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
@@ -318,7 +318,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "plan/create: repo or project_id, name, optional base; create also plan_id/key. inspect: project_id or path, offset/limit. handoff: finished task_id. cleanup: project_id, optional keep_branch, key. Except inspect, needs worktrees=true. Never merges/pushes.",
+      "description": "plan/create(repo, name, optional base). inspect(path, offset/limit). handoff(finished task_id) returns a patch artifact. cleanup(key) removes the managed folder. All but inspect need worktrees=true. Never merges/pushes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -342,6 +342,7 @@
           },
           "keep_branch": {
             "default": false,
+            "description": "Keep the branch cleanup would delete.",
             "type": "boolean"
           },
           "limit": {
@@ -373,11 +374,13 @@
             "type": "string"
           },
           "plan_id": {
+            "description": "Plan result for create (key required).",
             "maxLength": 64,
             "minLength": 64,
             "type": "string"
           },
           "project_id": {
+            "description": "Instead of repo/path. Needed for cleanup.",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
@@ -536,7 +539,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Start a persistent Codex conversation and return promptly with a task id. Poll codex_events and handle pending_requests until the turn finishes.",
+      "description": "Start a persistent conversation and promptly return its task id.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -554,6 +557,7 @@
         "properties": {
           "access": {
             "default": "write",
+            "description": "Project access (default write).",
             "enum": [
               "read",
               "write"
@@ -585,6 +589,7 @@
             "type": "string"
           },
           "context_files": {
+            "description": "Read project-relative UTF-8 files into context.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -599,6 +604,7 @@
             "type": "string"
           },
           "images": {
+            "description": "Project-relative PNG/JPEG/WebP/GIF paths only.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -625,6 +631,7 @@
           },
           "output_schema": {
             "additionalProperties": true,
+            "description": "Final answer's JSON Schema.",
             "type": "object"
           },
           "project_id": {
@@ -650,6 +657,7 @@
             "type": "string"
           },
           "skills": {
+            "description": "Enabled names from codex_skills.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -826,11 +834,12 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read task state and cumulative usage. workspace_claims explain ownership; page requests, children and claims. Large fields identify truncated_fields. result pages turn evidence (pin result_id); artifact reads scoped bytes by artifact_id. Use offset/limit. reconciliation explains recovery; permissions pages receipts and scope.",
+      "description": "Read task state, cumulative usage and workspace ownership. See truncated_fields.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "artifact_id": {
+            "description": "Required for artifact.",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
@@ -871,6 +880,7 @@
             "type": "integer"
           },
           "result_id": {
+            "description": "Reuse to pin the result revision across pages.",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
@@ -894,13 +904,14 @@
             "type": "string"
           },
           "turn_id": {
+            "description": "result reads this turn's evidence (default current turn).",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
           },
           "view": {
             "default": "default",
-            "description": "Detail or compact supervision view",
+            "description": "default gives details, compact a summary. Page separately with requests_cursor, subagents_offset/subagents_limit and claims_offset/claims_limit. reconciliation reads the recovery report. permissions gives receipts and scope. offset/limit count artifact bytes or result/permissions records.",
             "enum": [
               "default",
               "compact",
@@ -994,7 +1005,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Replay progress or wait up to 25s. Drain has_more. For fragments, keep after and use event_seq/next_event_offset until complete. Page requests with requests_cursor. outcome coalesces state for task_ids (max 50); return cursors unchanged on the next poll. Detailed replay uses after separately.",
+      "description": "Replay details from after and drain has_more. Keep after and event_seq for fragments. Pass next_event_offset as event_offset until fragment_complete.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1071,7 +1082,7 @@
           },
           "view": {
             "default": "default",
-            "description": "Detail or compact supervision view",
+            "description": "outcome coalesces state for task_ids. Return opaque cursors unchanged.",
             "enum": [
               "default",
               "compact",
@@ -1158,7 +1169,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Send a follow-up turn or steer active work. Steering needs the current expected_turn_id; follow-ups can select a supported model/effort.",
+      "description": "follow_up starts another turn. steer adds input to the active turn and needs its expected_turn_id. Only follow_up takes model, effort and output_schema.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -1175,6 +1186,7 @@
         ],
         "properties": {
           "context_files": {
+            "description": "Read project-relative UTF-8 files into context.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -1194,6 +1206,7 @@
             "type": "string"
           },
           "images": {
+            "description": "Project-relative PNG/JPEG/WebP/GIF paths only.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -1225,6 +1238,7 @@
           },
           "output_schema": {
             "additionalProperties": true,
+            "description": "Final answer's JSON Schema.",
             "type": "object"
           },
           "prompt": {
@@ -1239,6 +1253,7 @@
             "type": "string"
           },
           "skills": {
+            "description": "Enabled names from codex_skills.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -1523,7 +1538,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Page persisted turns or items for owned conversations, including after an outage. Large items identify truncated_fields; pending approval details come from codex_review_request.",
+      "description": "Page owned turns/items saved across outages. Large items flag truncated_fields. Pending approvals use codex_review_request.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1721,7 +1736,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Answer guidance or review requests. Typed decisions apply only to ask_parent. Approvals need human/relay; file accepts need proposal_hash. Denials need no human.",
+      "description": "Answer pending guidance or review requests. Approvals need human/relay. Denials need no human.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -1744,19 +1759,20 @@
             "type": "string"
           },
           "proposal_hash": {
-            "description": "Required for file_approval accept: the hash displayed with the reviewed proposal",
+            "description": "Accept file_approval with the hash shown at review. If redacted, human only.",
             "maxLength": 64,
             "minLength": 1,
             "type": "string"
           },
           "request_id": {
-            "description": "Pending request id, not an operation key",
+            "description": "Pending ID, not a retry key.",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
           },
           "response": {
             "additionalProperties": true,
+            "description": "Match request kind.",
             "properties": {
               "decision": {
                 "anyOf": [
@@ -1767,7 +1783,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Approval string or ask_parent object: version,id,context_hash,option_id,rationale. Guidance grants no authority."
+                "description": "Approval string or ask_parent object (version,id,context_hash,option_id,rationale). No form grants authority."
               }
             },
             "type": "object"
@@ -1837,7 +1853,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Human review, or read details with offset=0. Follow next_offset and verify detail_sha256. Acceptance requires complete content.",
+      "description": "With offset (from 0), read details, no prompt. Follow next_offset until null. Check assembled text with detail_total_chars and detail_sha256. Omit offset for a client form that may relay the human's decision. Without forms it stays pending. Run server.py review REQUEST_ID in a terminal. Accept only complete content.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -1871,6 +1887,7 @@
             "type": "string"
           },
           "request_id": {
+            "description": "Pending request id from codex_requests/codex_events/codex_status.",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
@@ -1978,7 +1995,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Discover native collaboration/permission options and direct-input capability for a task.",
+      "description": "Check native collaboration, permissions and direct input support.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2057,7 +2074,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "get reads settings. next takes model/effort/approval_mode/collaboration_mode/service_tier/access and root-only family budget (applies now; {} clears). current takes model/effort/approval_mode/service_tier and expected_turn_id. Changes need an operation key.",
+      "description": "get reads settings. Set current (running turn only, expected_turn_id) or next (future turns) with a key. Both take approval_mode plus model/effort/service_tier from codex_models. next adds access/collaboration_mode/budget. Pending approvals keep their reviewer.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2081,7 +2098,7 @@
           },
           "budget": {
             "additionalProperties": false,
-            "description": "Family lifetime limits: server turns/child admissions hard; active seconds, tokens, stored bytes soft (may overshoot). Native continuations/children may exceed admission caps. {} clears.",
+            "description": "Root-only family lifetime caps apply now. Native continuations/children may exceed hard server turn/child admission caps. Active seconds/tokens/stored bytes may overshoot. {} clears.",
             "properties": {
               "max_active_seconds": {
                 "maximum": 31536000,
@@ -2230,7 +2247,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Page verified descendants; parent events include child requests. refresh=false uses offset; refresh=true uses cursor. Respect can_accept_direct_input.",
+      "description": "Discover native descendants with refresh=true (cursor=nextCursor until null). Then page locally with refresh=false (offset=0, then next_offset until null). If can_accept_direct_input=false, use codex_delegate on that child's parent.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2297,6 +2314,9 @@
                   }
                 ]
               },
+              "next_steps": {
+                "type": "array"
+              },
               "ok": {
                 "const": true
               },
@@ -2307,7 +2327,8 @@
             "required": [
               "subagents",
               "nextCursor",
-              "next_offset"
+              "next_offset",
+              "next_steps"
             ],
             "type": "object"
           },
@@ -2349,7 +2370,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Ask a parent to manage native subagents; discover them with codex_subagents. Active parents require expected_turn_id.",
+      "description": "Guide a parent (expected_turn_id if active). It may use native subagents. Find children via codex_subagents.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -2366,7 +2387,7 @@
         ],
         "properties": {
           "contract": {
-            "description": "Version 1 guidance: version,id,goal,constraints,deliverables,verification,options,evidence,ttl_seconds (60..604800). No authority.",
+            "description": "Guidance, no authority. version=1,id,goal,constraints,deliverables,verification,options,evidence,ttl_seconds (60..604800).",
             "type": "object"
           },
           "expected_turn_id": {
@@ -2994,7 +3015,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Remove a selected turn and all later native conversation history. DOES NOT revert files. Requires explicit acknowledgement; local event audit remains.",
+      "description": "Trim native history. Never reverts files. Local event audit stays.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -3011,11 +3032,13 @@
         ],
         "properties": {
           "before_turn_id": {
+            "description": "codex_history's logical_turn_id. Remove this and all later turns.",
             "maxLength": 100000,
             "minLength": 1,
             "type": "string"
           },
           "confirm_history_only": {
+            "description": "Set true (history only, files intact).",
             "type": "boolean"
           },
           "operation_id": {
@@ -3107,7 +3130,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "list takes cursor/limit; add takes prompt and optional images/context_files/skills; update also needs queued_id; delete needs queued_id; reorder needs ordered_ids; start takes optional queued_id. Mutations need an operation key.",
+      "description": "Manage native queued instructions. add may run immediately. add/update need prompt (optional images/context_files/skills). update/delete need queued_id, reorder needs ordered_ids. start uses conversation settings and optional queued_id. Changes need an operation key.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3126,6 +3149,7 @@
             "type": "string"
           },
           "context_files": {
+            "description": "Read project-relative UTF-8 files into context.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -3141,6 +3165,7 @@
             "type": "string"
           },
           "images": {
+            "description": "Project-relative PNG/JPEG/WebP/GIF paths only.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -3187,6 +3212,7 @@
             "type": "string"
           },
           "skills": {
+            "description": "Enabled names from codex_skills.",
             "items": {
               "maxLength": 100000,
               "minLength": 1,
@@ -3256,7 +3282,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Start native code review of uncommitted changes, a base branch, a commit or custom instructions on an idle task. Poll for findings/results.",
+      "description": "Run native code review on an idle task. Poll for findings. custom uses instructions.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -3382,7 +3408,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "list takes cursor/limit; terminate takes process_id; clean stops all background terminals. Mutations need an operation key. No arbitrary shell or stdin.",
+      "description": "List this task's native background processes (cursor/limit). terminate(process_id,key) stops one. clean(key) stops all. No shell or stdin.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3487,7 +3513,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "get reads a goal; set takes objective/status/token_budget; clear removes it. Mutations need user_requested=true and an operation key. Only change goals on explicit human instruction.",
+      "description": "get reads a goal. clear removes it. set takes objective, status or native token_budget, separate from the codex_settings family budget. Active goals may continue work and consume usage. set/clear need explicit human instruction, user_requested=true and an operation key.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3600,7 +3626,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List native skills available for this project. Select enabled skills by name in start/send; no global skill configuration changes.",
+      "description": "List native project skills. start/send take enabled names. No global config writes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3821,7 +3847,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Choose workdir or project_id. list takes cursor/limit/archived; import takes thread_id, confirm_stopped=true, optional archived and an operation key. Native scope is verified before work.",
+      "description": "For this project, list native sessions including Codex CLI (cursor/limit/archived) or import a root thread_id as a bridge task (key, optional archived). Native scope checked before work.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3841,6 +3867,7 @@
           },
           "confirm_stopped": {
             "default": false,
+            "description": "Import needs true (stopped in all other Codex clients).",
             "type": "boolean"
           },
           "cursor": {

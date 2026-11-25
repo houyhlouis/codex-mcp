@@ -2697,10 +2697,12 @@ class Service(ExtendedControls):
                 decision_receipt = save_receipt(self.store, authority.receipt_fields(current, params, source, decision))
         try:
             await self.backend.respond(req["rpc_id"], result, before_send=before_send)
-        except Exception:
+        except Exception as exc:
+            keep_pending = stale or (isinstance(exc, BridgeError) and exc.code == "native_timeout" and not exc.uncertain
+                                     and self.backend.alive and req["generation"] == self.backend.generation)
             with self.store.transaction():
-                self.store.update("requests", request_id, {"status": "pending" if stale else "expired"}, expected={"status": "answering"})
-                if not stale:
+                self.store.update("requests", request_id, {"status": "pending" if keep_pending else "expired"}, expected={"status": "answering"})
+                if not keep_pending:
                     self.raw_requests.pop(request_id, None)
             await self.wake()
             raise

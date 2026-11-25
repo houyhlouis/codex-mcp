@@ -163,8 +163,7 @@ def project_path(config, value, create=False, *, allow_missing=False):
     private_dirs = [config.state_dir, Path.home() / ".ssh", Path.home() / ".aws"]
     if any(within(resolved, p.resolve()) or within(p.resolve(), resolved) for p in private_dirs):
         raise BridgeError("Project directory overlaps private state or credential storage")
-    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser().resolve()
-    protected_files = [codex_home / "auth.json"] + ([config.path] if config.path else [])
+    protected_files = [Path(config.codex_home) / "auth.json"] + ([config.path] if config.path else [])
     if any(within(p.resolve(), resolved) for p in protected_files):
         raise BridgeError("Project directory must not contain the operator configuration or Codex credentials")
     if allow_missing and not create:

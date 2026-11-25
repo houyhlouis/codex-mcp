@@ -129,53 +129,62 @@ KEY = string("Key for identical retries", maxLength=200)
 CURSOR = string("Native cursor")
 BUDGET = {"type": "object", "properties": {name: {"type": "integer", "minimum": 1, "maximum": maximum}
     for name, maximum in BUDGET_LIMITS.items()}, "additionalProperties": False,
-    "description": "Family lifetime limits: server turns/child admissions hard; active seconds, tokens, stored bytes soft (may overshoot). Native continuations/children may exceed admission caps. {} clears."}
+    "description": "Root-only family lifetime caps apply now. Native continuations/children may exceed hard server turn/child admission caps. Active seconds/tokens/stored bytes may overshoot. {} clears."}
 APPROVAL_MODE = string("Native Codex reviewer; approve_for_me uses auto_review without disabling sandboxing", enum=["inherit", "ask", "approve_for_me"])
-INPUTS = {"images": {"type": "array", "items": string(), "maxItems": 10},
-          "context_files": {"type": "array", "items": string(), "maxItems": 20},
-          "skills": {"type": "array", "items": string(), "maxItems": 10},
-          "output_schema": {"type": "object", "additionalProperties": True}}
+INPUTS = {"images": {"type": "array", "items": string(), "maxItems": 10,
+                     "description": "Project-relative PNG/JPEG/WebP/GIF paths only."},
+          "context_files": {"type": "array", "items": string(), "maxItems": 20,
+                            "description": "Read project-relative UTF-8 files into context."},
+          "skills": {"type": "array", "items": string(), "maxItems": 10,
+                     "description": "Enabled names from codex_skills."},
+          "output_schema": {"type": "object", "additionalProperties": True, "description": "Final answer's JSON Schema."}}
 PROJECT = {"workdir": string("Absolute project directory chosen by the main agent"),
            "project_id": string("Selected project; use instead of workdir")}
 REQUEST_PAGING = {"requests_cursor": string("Pending-request cursor"),
                   "requests_limit": integer(50, 1, 200)}
 TOOLS = [
-    tool("codex_plans", "submit: spec/key; inspect: plan_id; list: offset/limit; cancel: plan_id/key. Runs bounded dependency plans through ordinary task admission. Unknown outcomes wait for explicit resume; no side effect is retried.",
+    tool("codex_plans", "submit (spec/key) can start Codex work via ordinary task admission. cancel (plan_id/key) stops new steps and asks running steps to interrupt. "
+         "Inspect by plan_id, list by offset/limit. Uncertain outcomes await explicit resume.",
          {"action": string(enum=["submit", "inspect", "list", "cancel"]),
-          "spec": {"type": "object", "description": "Version 1 dependency plan; see the tools documentation."},
+          "spec": {"type": "object", "description": '{"version":1,"name":"job","nodes":[{"id":"a","action":"start","target":{"project_id":"P"},"prompt":"Test"}]}. '
+                   "1-16 nodes. Optional max_parallel 1-4 (default 2). after lists dependency ids. start targets project_id or absolute workdir. "
+                   'send/review target {"node":"a"} for start ancestor a. Only review may omit prompt.'},
           "plan_id": string(minLength=64, maxLength=64), "request_id": KEY,
           "offset": integer(0, maximum=1000000), "limit": integer(20, 1, 100)}, ["action"]),
-    tool("codex_status", "Check installed Codex, sign-in type, pending request summaries and broker health.", REQUEST_PAGING, read_only=True),
+    tool("codex_status", "Get Codex version, sign-in type, broker health, pending request summaries.", REQUEST_PAGING, read_only=True),
     tool("codex_projects", "The main agent chooses an absolute directory to select or create. Returns a project_id for tasks; no workspace configuration is required. List returns previously selected projects, not the whole filesystem.",
          {"action": string(enum=["list", "select", "create"], default="list"),
-          "path": string("Absolute directory to select/create"), "offset": integer(0, maximum=1000000), "limit": integer(100, 1, 200)}),
-    tool("codex_worktrees", "plan/create: repo or project_id, name, optional base; create also plan_id/key. inspect: project_id or path, offset/limit. handoff: finished task_id. cleanup: project_id, optional keep_branch, key. Except inspect, needs worktrees=true. Never merges/pushes.",
+          "path": string("Main agent's absolute select/create directory."), "offset": integer(0, maximum=1000000), "limit": integer(100, 1, 200)}),
+    tool("codex_worktrees", "plan/create(repo, name, optional base). inspect(path, offset/limit). handoff(finished task_id) returns a patch artifact. "
+         "cleanup(key) removes the managed folder. "
+         "All but inspect need worktrees=true. Never merges/pushes.",
          {"action": string(enum=["plan", "create", "inspect", "handoff", "cleanup"]),
-          "repo": string("Absolute repository"), "project_id": string(), "name": string(maxLength=64),
-          "base": string(default="HEAD", maxLength=1024), "plan_id": string(minLength=64, maxLength=64),
+          "repo": string("Absolute repository"), "project_id": string("Instead of repo/path. Needed for cleanup."), "name": string(maxLength=64),
+          "base": string(default="HEAD", maxLength=1024), "plan_id": string("Plan result for create (key required).", minLength=64, maxLength=64),
           "path": string(), "task_id": TASK, "request_id": KEY,
-          "keep_branch": {"type": "boolean", "default": False}, "offset": integer(0, maximum=1000000), "limit": integer(50, 1, 200)}, ["action"]),
+          "keep_branch": {"type": "boolean", "default": False, "description": "Keep the branch cleanup would delete."},
+          "offset": integer(0, maximum=1000000), "limit": integer(50, 1, 200)}, ["action"]),
     tool("codex_models", "Discover model ids, supported reasoning efforts and defaults. Catalog visibility is not an entitlement guarantee.",
          {"cursor": CURSOR, "limit": integer(100, 1, 200)}, read_only=True),
-    tool("codex_start", "Start a persistent Codex conversation and return promptly with a task id. Poll codex_events and handle pending_requests until the turn finishes.",
+    tool("codex_start", "Start a persistent conversation and promptly return its task id.",
          {**PROJECT, "prompt": string(), "request_id": KEY,
-          "model": string(), "effort": string(), "access": string(enum=["read", "write"], default="write"),
+          "model": string(), "effort": string(), "access": string("Project access (default write).", enum=["read", "write"], default="write"),
           "approval_mode": {**APPROVAL_MODE, "default": "inherit"},
           "collaboration_mode": string(enum=["default", "plan"], default="default"),
           "service_tier": string(), "name": string(maxLength=200), **INPUTS},
          ["prompt", "request_id"]),
     tool("codex_list", "Page persistent tasks, newest first. Large projections identify truncated_fields.",
          {"offset": integer(0, maximum=1000000), "limit": integer(50, 1, 200)}, read_only=True),
-    tool("codex_get", "Read task state and cumulative usage. workspace_claims explain ownership; page requests, children and claims. Large fields identify truncated_fields.",
+    tool("codex_get", "Read task state, cumulative usage and workspace ownership. See truncated_fields.",
          {"task_id": TASK, **REQUEST_PAGING, "subagents_offset": integer(0, maximum=1000000),
           "subagents_limit": integer(50, 1, 200), "claims_offset": integer(0, maximum=1000000),
           "claims_limit": integer(100, 1, 200)}, ["task_id"], read_only=True),
-    tool("codex_events", "Replay progress or wait up to 25s. Drain has_more. For fragments, keep after and use event_seq/next_event_offset until complete. Page requests with requests_cursor.",
+    tool("codex_events", "Replay details from after and drain has_more. Keep after and event_seq for fragments. Pass next_event_offset as event_offset until fragment_complete.",
          {"task_id": TASK, "after": integer(0, maximum=2**53-1), "limit": integer(100, 1, 200),
           "wait_seconds": integer(0, maximum=25), "include_descendants": {"type": "boolean", "default": True},
           **REQUEST_PAGING, "event_offset": integer(0, maximum=2**53-1),
           "event_seq": integer(0, maximum=2**53-1)}, read_only=True),
-    tool("codex_send", "Send a follow-up turn or steer active work. Steering needs the current expected_turn_id; follow-ups can select a supported model/effort.",
+    tool("codex_send", "follow_up starts another turn. steer adds input to the active turn and needs its expected_turn_id. Only follow_up takes model, effort and output_schema.",
          {"task_id": TASK, "prompt": string(), "mode": string(enum=["follow_up", "steer"], default="follow_up"),
           "expected_turn_id": string(), "model": string(), "effort": string(), "request_id": KEY, **INPUTS},
          ["task_id", "prompt", "request_id"]),
@@ -183,20 +192,23 @@ TOOLS = [
          {"task_id": TASK, "request_id": KEY}, ["task_id", "request_id"]),
     tool("codex_interrupt", "Ask Codex to interrupt the specified active turn. Poll for interrupted/completed; interrupt acknowledgement alone is not completion.",
          {"task_id": TASK, "expected_turn_id": string(), "request_id": KEY}, ["task_id", "expected_turn_id", "request_id"]),
-    tool("codex_history", "Page persisted turns or items for owned conversations, including after an outage. Large items identify truncated_fields; pending approval details come from codex_review_request.",
+    tool("codex_history", "Page owned turns/items saved across outages. Large items flag truncated_fields. Pending approvals use codex_review_request.",
          {"task_id": TASK, "kind": string(enum=["turns", "items"], default="turns"),
           "cursor": CURSOR, "limit": integer(50, 1, 200), "turn_id": string()}, ["task_id"], True),
     tool("codex_requests", "Page bounded pending approval/question summaries using cursor. Fetch complete content by id with codex_review_request before approval. Never infer approval from silence or timeout.",
          {"task_id": TASK, "cursor": string("Pending-request continuation"), "limit": integer(50, 1, 200)}, read_only=True),
-    tool("codex_respond", "Answer guidance or review requests. Typed decisions apply only to ask_parent. Approvals need human/relay; file accepts need proposal_hash. Denials need no human.",
-         {"request_id": string("Pending request id, not an operation key"),
-          "proposal_hash": string("Required for file_approval accept: the hash displayed with the reviewed proposal", maxLength=64),
-          "response": {"type": "object", "additionalProperties": True, "properties": {"decision": {"anyOf": [{"type": "string"}, {"type": "object"}],
-              "description": "Approval string or ask_parent object: version,id,context_hash,option_id,rationale. Guidance grants no authority."}}}}, ["request_id", "response"]),
-    tool("codex_review_request", "Human review, or read details with offset=0. Follow next_offset and verify detail_sha256. Acceptance requires complete content.",
-         {"request_id": string(), "offset": {"type": "integer", "minimum": 0, "maximum": 2**53-1},
+    tool("codex_respond", "Answer pending guidance or review requests. Approvals need human/relay. Denials need no human.",
+         {"request_id": string("Pending ID, not a retry key."),
+          "proposal_hash": string("Accept file_approval with the hash shown at review. If redacted, human only.", maxLength=64),
+          "response": {"type": "object", "description": "Match request kind.",
+              "additionalProperties": True, "properties": {"decision": {"anyOf": [{"type": "string"}, {"type": "object"}],
+              "description": "Approval string or ask_parent object (version,id,context_hash,option_id,rationale). No form grants authority."}}}}, ["request_id", "response"]),
+    tool("codex_review_request", "With offset (from 0), read details, no prompt. Follow next_offset until null. Check assembled text with detail_total_chars and detail_sha256. "
+         "Omit offset for a client form that may relay the human's decision. Without forms it stays pending. "
+         "Run server.py review REQUEST_ID in a terminal. Accept only complete content.",
+         {"request_id": string("Pending request id from codex_requests/codex_events/codex_status."), "offset": {"type": "integer", "minimum": 0, "maximum": 2**53-1},
           "limit": integer(DETAIL_CHARS, 1, 262144)}, ["request_id"]),
-    tool("codex_capabilities", "Discover native collaboration/permission options and direct-input capability for a task.",
+    tool("codex_capabilities", "Check native collaboration, permissions and direct input support.",
          {"task_id": TASK}, ["task_id"], True),
     tool("codex_settings", "Read/change task model, effort, native approval reviewer, plan mode, service tier or project access. scope=current affects only a running turn; next affects future turns. Existing pending approvals keep their reviewer. Mutations need request_id.",
          {"task_id": TASK, "scope": string(enum=["get", "next", "current"], default="get"),
@@ -204,13 +216,13 @@ TOOLS = [
           "approval_mode": string(enum=["ask", "approve_for_me"]),
           "collaboration_mode": string(enum=["default", "plan"]), "service_tier": string(),
           "access": string(enum=["read", "write"]), "budget": BUDGET, "request_id": KEY}, ["task_id"]),
-    tool("codex_subagents", "Page verified descendants; parent events include child requests. refresh=false uses offset; refresh=true uses cursor. Respect can_accept_direct_input.",
+    tool("codex_subagents", "Discover native descendants with refresh=true (cursor=nextCursor until null). Then page locally with refresh=false (offset=0, then next_offset until null). If can_accept_direct_input=false, use codex_delegate on that child's parent.",
          {"task_id": TASK, "cursor": CURSOR, "limit": integer(50, 1, 200),
           "refresh": {"type": "boolean", "default": True}, "archived": {"type": "boolean", "default": False},
           "offset": integer(0, maximum=1000000)}, ["task_id"], True),
-    tool("codex_delegate", "Ask a parent to manage native subagents; discover them with codex_subagents. Active parents require expected_turn_id.",
+    tool("codex_delegate", "Guide a parent (expected_turn_id if active). It may use native subagents. Find children via codex_subagents.",
          {"task_id": TASK, "prompt": string(), "expected_turn_id": string(), "request_id": KEY,
-          "contract": {"type": "object", "description": "Version 1 guidance: version,id,goal,constraints,deliverables,verification,options,evidence,ttl_seconds (60..604800). No authority."}}, ["task_id", "prompt", "request_id"]),
+          "contract": {"type": "object", "description": "Guidance, no authority. version=1,id,goal,constraints,deliverables,verification,options,evidence,ttl_seconds (60..604800)."}}, ["task_id", "prompt", "request_id"]),
     tool("codex_fork", "Fork an idle owned conversation, optionally through a selected turn. Keeps project boundaries; does not start work or automatically continue a goal.",
          {"task_id": TASK, "name": string(maxLength=200), "last_turn_id": string(), "request_id": KEY}, ["task_id", "request_id"]),
     tool("codex_rename", "Rename an owned native conversation.", {"task_id": TASK, "name": string(maxLength=200), "request_id": KEY}, ["task_id", "name", "request_id"]),
@@ -220,15 +232,16 @@ TOOLS = [
          {"task_id": TASK, "confirm_thread_id": string(), "request_id": KEY}, ["task_id", "confirm_thread_id", "request_id"]),
     tool("codex_compact", "Request native history compaction for an idle conversation; may consume model usage. Poll completion events.",
          {"task_id": TASK, "request_id": KEY}, ["task_id", "request_id"]),
-    tool("codex_revert", "Remove a selected turn and all later native conversation history. DOES NOT revert files. Requires explicit acknowledgement; local event audit remains.",
-         {"task_id": TASK, "before_turn_id": string(), "confirm_history_only": {"type": "boolean"}, "request_id": KEY},
+    tool("codex_revert", "Trim native history. Never reverts files. Local event audit stays.",
+         {"task_id": TASK, "before_turn_id": string("codex_history's logical_turn_id. Remove this and all later turns."),
+          "confirm_history_only": {"type": "boolean", "description": "Set true (history only, files intact)."}, "request_id": KEY},
          ["task_id", "before_turn_id", "confirm_history_only", "request_id"]),
     tool("codex_queue", "List/add/update/delete/reorder/start native queued instructions. Mutation actions require request_id. Queues survive reconnect; starting uses the selected thread's settings.",
          {"task_id": TASK, "action": string(enum=["list", "add", "update", "delete", "reorder", "start"], default="list"),
           "prompt": string(), "queued_id": string(), "ordered_ids": {"type": "array", "items": string(), "maxItems": 100},
           "cursor": CURSOR, "limit": integer(50, 1, 200), "request_id": KEY,
           **{k: v for k, v in INPUTS.items() if k != "output_schema"}}, ["task_id"]),
-    tool("codex_review", "Start native code review of uncommitted changes, a base branch, a commit or custom instructions on an idle task. Poll for findings/results.",
+    tool("codex_review", "Run native code review on an idle task. Poll for findings. custom uses instructions.",
          {"task_id": TASK, "target": string(enum=["uncommittedChanges", "baseBranch", "commit", "custom"], default="uncommittedChanges"),
           "branch": string(), "commit": string(), "instructions": string(), "request_id": KEY}, ["task_id", "request_id"]),
     tool("codex_terminals", "List or stop native background terminals scoped to one owned task. No arbitrary shell execution or stdin injection. Mutations require request_id.",
@@ -238,14 +251,15 @@ TOOLS = [
          {"task_id": TASK, "action": string(enum=["get", "set", "clear"], default="get"), "objective": string(),
           "status": string(enum=["active", "paused", "blocked", "complete"]), "token_budget": {"type": "integer", "minimum": 1, "maximum": 10000000},
           "user_requested": {"type": "boolean", "default": False}, "request_id": KEY}, ["task_id"]),
-    tool("codex_skills", "List native skills available for this project. Select enabled skills by name in start/send; no global skill configuration changes.",
+    tool("codex_skills", "List native project skills. start/send take enabled names. No global config writes.",
          {"task_id": TASK, "force_reload": {"type": "boolean", "default": False}}, ["task_id"], True),
     tool("codex_diff", "Retrieve the current native turn's diff and reported file changes; old diffs are not carried into new turns. Does not invoke Git hooks or execute a shell.", {"task_id": TASK}, ["task_id"], True),
     tool("codex_usage", "Read native account rate limits/remaining allowance. Does not buy credits or change billing.", {}, read_only=True),
     tool("codex_sessions", "List/import native CLI conversations for the workdir or project_id explicitly selected by the main agent. Import requires thread_id and request_id; permissions are reapplied before work.",
          {**PROJECT, "action": string(enum=["list", "import"], default="list"),
           "thread_id": string(), "cursor": CURSOR, "limit": integer(50, 1, 200),
-          "archived": {"type": "boolean", "default": False}, "confirm_stopped": {"type": "boolean", "default": False}, "request_id": KEY}),
+          "archived": {"type": "boolean", "default": False}, "confirm_stopped": {"type": "boolean", "default": False,
+              "description": "Import needs true (stopped in all other Codex clients)."}, "request_id": KEY}),
 ]
 ACTION_FIELDS = {
     "codex_plans": ("action", None, set(), {"submit": {"spec", "request_id"}, "inspect": {"plan_id"}, "list": {"offset", "limit"}, "cancel": {"plan_id", "request_id"}}),
@@ -266,12 +280,16 @@ ACTION_FIELDS = {
     "codex_sessions": ("action", "list", {"workdir", "project_id"}, {"list": {"cursor", "limit", "archived"}, "import": {"thread_id", "archived", "confirm_stopped", "request_id"}}),
 }
 ACTION_DESCRIPTIONS = {
-    "codex_projects": "List selected projects with offset/limit; select/create takes path. The main agent chooses an absolute project directory.",
-    "codex_settings": "get reads settings. next takes model/effort/approval_mode/collaboration_mode/service_tier/access and root-only family budget (applies now; {} clears). current takes model/effort/approval_mode/service_tier and expected_turn_id. Changes need an operation key.",
-    "codex_queue": "list takes cursor/limit; add takes prompt and optional images/context_files/skills; update also needs queued_id; delete needs queued_id; reorder needs ordered_ids; start takes optional queued_id. Mutations need an operation key.",
-    "codex_terminals": "list takes cursor/limit; terminate takes process_id; clean stops all background terminals. Mutations need an operation key. No arbitrary shell or stdin.",
-    "codex_goal": "get reads a goal; set takes objective/status/token_budget; clear removes it. Mutations need user_requested=true and an operation key. Only change goals on explicit human instruction.",
-    "codex_sessions": "Choose workdir or project_id. list takes cursor/limit/archived; import takes thread_id, confirm_stopped=true, optional archived and an operation key. Native scope is verified before work.",
+    "codex_projects": "list(offset/limit) shows registered projects. select registers an existing directory. create makes a plain one.",
+    "codex_settings": "get reads settings. Set current (running turn only, expected_turn_id) or next (future turns) with a key. "
+                      "Both take approval_mode plus model/effort/service_tier from codex_models. next adds access/collaboration_mode/budget. Pending approvals keep their reviewer.",
+    "codex_queue": "Manage native queued instructions. add may run immediately. add/update need prompt (optional images/context_files/skills). "
+                   "update/delete need queued_id, reorder needs ordered_ids. start uses conversation settings and optional queued_id. Changes need an operation key.",
+    "codex_terminals": "List this task's native background processes (cursor/limit). terminate(process_id,key) stops one. clean(key) stops all. No shell or stdin.",
+    "codex_goal": "get reads a goal. clear removes it. set takes objective, status or native token_budget, separate from the codex_settings family budget. "
+                  "Active goals may continue work and consume usage. set/clear need explicit human instruction, user_requested=true and an operation key.",
+    "codex_sessions": "For this project, list native sessions including Codex CLI (cursor/limit/archived) or import a root thread_id as a bridge task "
+                      "(key, optional archived). Native scope checked before work.",
 }
 ACTION_REQUIRED = {
     ("codex_plans", "submit"): ("spec", "request_id"), ("codex_plans", "inspect"): ("plan_id",),
@@ -298,15 +316,18 @@ for descriptor in TOOLS:
         schema["properties"]["view"] = string("Detail or compact supervision view", enum=["default", "compact"], default="default")
     if name == "codex_get":
         schema["properties"]["view"]["enum"] += ["result", "artifact", "reconciliation", "permissions"]
-        schema["properties"].update({"turn_id": string(), "artifact_id": string(), "result_id": string(),
+        schema["properties"]["view"]["description"] = (
+            "default gives details, compact a summary. Page separately with requests_cursor, subagents_offset/subagents_limit and claims_offset/claims_limit. "
+            "reconciliation reads the recovery report. permissions gives receipts and scope. offset/limit count artifact bytes or result/permissions records.")
+        schema["properties"].update({"turn_id": string("result reads this turn's evidence (default current turn)."),
+            "artifact_id": string("Required for artifact."), "result_id": string("Reuse to pin the result revision across pages."),
             "offset": integer(0, maximum=2**53-1), "limit": {"type": "integer", "minimum": 1, "maximum": 262144}})
-        descriptor["description"] += " result pages turn evidence (pin result_id); artifact reads scoped bytes by artifact_id. Use offset/limit. reconciliation explains recovery; permissions pages receipts and scope."
     if name == "codex_events":
         schema["properties"]["view"]["enum"].append("outcome")
         schema["properties"].update({"task_ids": {"type": "array", "items": TASK, "minItems": 1, "maxItems": 50},
             "cursors": {"type": "object", "additionalProperties": string(maxLength=2048)},
             "tasks_offset": integer(0, maximum=1000000)})
-        descriptor["description"] += " outcome coalesces state for task_ids (max 50); return cursors unchanged on the next poll. Detailed replay uses after separately."
+        schema["properties"]["view"]["description"] = "outcome coalesces state for task_ids. Return opaque cursors unchanged."
 
 BY_NAME = {t["name"]: t for t in TOOLS}
 
@@ -336,7 +357,8 @@ SUCCESS_SCHEMAS = {
         object_schema({"status": TEXT, "request": OBJECT}, ("status", "request")),
         object_schema({"request_id": TEXT, "status": TEXT}, ("request_id", "status"))]},
     "codex_settings": object_schema({"id": TEXT}, ("id",)),
-    "codex_subagents": object_schema({"subagents": ARRAY, "nextCursor": NULLABLE_TEXT, "next_offset": NULLABLE_NUMBER}, ("subagents", "nextCursor", "next_offset")),
+    "codex_subagents": object_schema({"subagents": ARRAY, "nextCursor": NULLABLE_TEXT, "next_offset": NULLABLE_NUMBER,
+        "next_steps": ARRAY}, ("subagents", "nextCursor", "next_offset", "next_steps")),
     "codex_delete": object_schema({"task_id": TEXT, "deleted": FLAG, "audit_retained": FLAG}, ("task_id", "deleted", "audit_retained")),
     "codex_revert": object_schema({"task_id": TEXT, "history": OBJECT, "files_changed": FLAG}, ("task_id", "history", "files_changed")),
     "codex_diff": object_schema({"task_id": TEXT, "turn_id": NULLABLE_TEXT, "diff": TEXT, "files": ARRAY}, ("task_id", "turn_id", "diff", "files")),

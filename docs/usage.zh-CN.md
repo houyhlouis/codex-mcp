@@ -128,7 +128,7 @@ python3 server.py review PENDING_ID
 
 如果父任务正在运行，还要传入 `expected_turn_id`。
 
-- `codex_subagents` 列出经过验证的子代理，每个子代理都有自己的 `task_id`。
+- `codex_subagents` 列出经过验证的子代理，每个子代理都有自己的 `task_id`。请按结果中的 `next_steps` 继续调用，直到它变为 `[]`，这样才能完成发现阶段并列出全部已验证的子代理。
 - 轮询父任务的事件时会包含子代理的事件和请求（`include_descendants` 默认为 true）。
 - 只要还有子代理在工作，`family_status` 就保持 `active`。父任务这一轮结束并不代表所有子代理都已完成。
 - 如果子代理的 `can_accept_direct_input` 为 false，请通过父任务用 `codex_delegate` 向它发送指令。
@@ -180,7 +180,7 @@ python3 server.py review PENDING_ID
 | 永久删除 | `codex_delete`，`confirm_thread_id` 必须等于任务的 `thread_id` |
 | 后台进程 | `codex_terminals`（`list`、`terminate`、`clean`） |
 | 持久目标 | `codex_goal`。只有在用户明确要求时才修改（`user_requested: true`） |
-| 导入 CLI 会话 | `codex_sessions`（先 `list`，再用 `thread_id` 和 `confirm_stopped: true` 进行 `import`） |
+| 导入原生会话 | `codex_sessions`（先 `list`，再用 `thread_id` 和 `confirm_stopped: true` 进行 `import`）。列出同一项目中来自 Codex CLI、VS Code 扩展、`codex exec` 或 app-server 客户端的原生 Codex 对话 |
 | 账户额度 | `codex_usage` |
 
 全部参数见[工具参考](tools.md)（英文）。

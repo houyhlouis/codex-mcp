@@ -108,7 +108,10 @@ async def execute(args):
         if args.json:
             print(json.dumps(report, indent=2, ensure_ascii=False))
         else:
-            print(f"Structural incident: {report['tasks']} tasks, {report['events']} events, {report['requests']} requests; {report['bytes']} bytes")
+            requests = f"{report['requests']} requests"
+            if "omitted_requests" in report:
+                requests += f" included ({report['omitted_requests']} omitted)"
+            print(f"Structural incident: {report['tasks']} tasks, {report['events']} events, {requests}; {report['bytes']} bytes")
             print("Content omitted; no upload. " + ("Sanitized fixture written." if report.get("written") else "Preview only; no file was written."))
             print("preview_id: " + report["preview_id"])
             if not report.get("written"):

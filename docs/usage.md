@@ -128,7 +128,7 @@ Ask the parent task to delegate with `codex_delegate`. Codex spawns its own suba
 
 For a parent that is currently running, also pass `expected_turn_id`.
 
-- `codex_subagents` lists the verified children. Each child gets its own `task_id`.
+- `codex_subagents` lists the verified children. Each child gets its own `task_id`. Follow `next_steps` in its result until it is `[]` so that discovery finishes and every verified child is listed.
 - Polling the parent's events includes the children's events and requests (`include_descendants` defaults to true).
 - `family_status` stays `active` while any child is still working. A finished parent turn does not mean every child is done.
 - If a child has `can_accept_direct_input: false`, send instructions through the parent with `codex_delegate`.
@@ -180,7 +180,7 @@ Symbolic links are not followed.
 | Delete permanently | `codex_delete` with `confirm_thread_id` set to the task's `thread_id` |
 | Background processes | `codex_terminals` (`list`, `terminate`, `clean`) |
 | Persistent goal | `codex_goal`. Change it only when the user explicitly asks (`user_requested: true`) |
-| Import a CLI session | `codex_sessions` (`list`, then `import` with `thread_id` and `confirm_stopped: true`) |
+| Import a native session | `codex_sessions` (`list`, then `import` with `thread_id` and `confirm_stopped: true`). Lists native Codex conversations from the CLI, the VS Code extension, `codex exec` or an app-server client in the same project |
 | Account limits | `codex_usage` |
 
 See the [tool reference](tools.md) for all arguments.

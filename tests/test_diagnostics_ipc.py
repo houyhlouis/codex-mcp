@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from contextlib import chdir
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -23,8 +24,8 @@ class DoctorIPCTest(unittest.IsolatedAsyncioTestCase):
             binary = install_fake_codex(base)
             config_path = base / "config.toml"
             write_config(config_path, state, binary)
-            config = load_config(str(config_path))
-            with patch.dict(os.environ, {"CODEX_HOME": str(base / "home-a")}):
+            with chdir(base), patch.dict(os.environ, {"CODEX_HOME": "home-a"}):
+                config = load_config(str(config_path))
                 try:
                     await asyncio.wait_for(ensure_broker(config), 20)
                     health = await asyncio.wait_for(read_health(replace(config, max_tasks=9)), 5)
@@ -33,6 +34,9 @@ class DoctorIPCTest(unittest.IsolatedAsyncioTestCase):
                     with patch.dict(os.environ, {"CODEX_HOME": str(base / "home-b"), "CODEX_PROFILE": "different-profile"}):
                         report = await asyncio.wait_for(diagnose(str(config_path)), 15)
                     self.assertIn("broker_environment_mismatch", {f["code"] for f in report["findings"]})
+                    self.assertEqual(report["facts"]["broker"]["different_fingerprint_inputs"], ["codex_home"])
+                    mismatch = next(f for f in report["findings"] if f["code"] == "broker_identity_mismatch")
+                    self.assertIn("The differences are CODEX_HOME.", mismatch["message"])
                     self.assertFalse((await asyncio.wait_for(read_health(config), 5))["backend_alive"])
                     report = await asyncio.wait_for(diagnose(str(config_path), start_broker=True), 45)
                     self.assertIn("signin_ok", {f["code"] for f in report["findings"]})

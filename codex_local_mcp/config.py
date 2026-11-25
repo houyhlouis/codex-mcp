@@ -4,13 +4,18 @@ import json
 import os
 import stat
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import __version__
 from .platforms import IS_WINDOWS, default_state_dir, resolve_codex
 from .security import BridgeError, within, read_config_file, checked_directory
 from .resources import validate_budget
+
+
+def effective_codex_home():
+    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser().absolute()
+    return os.path.normcase(os.path.realpath(home))
 
 
 @dataclass(frozen=True)
@@ -26,6 +31,7 @@ class Config:
     budget: dict | None = None
     worktrees: bool = False
     worktree_root: Path | None = None
+    codex_home: str = field(default_factory=effective_codex_home)
 
     @property
     def socket(self):
@@ -42,7 +48,7 @@ class Config:
     @property
     def fingerprint_inputs(self):
         return {"bridge_version": __version__, "config_path": str(self.path) if self.path else None,
-                "state_dir": str(self.state_dir), "codex": self.codex, "max_tasks": self.max_tasks,
+                "state_dir": str(self.state_dir), "codex": self.codex, "codex_home": self.codex_home, "max_tasks": self.max_tasks,
                 "approval_relay": self.approval_relay, "allow_external_tools": self.allow_external_tools,
                 "toolchain_paths": [str(p) for p in self.toolchain_paths],
                 "sandbox_process_check": self.sandbox_process_check, "budget": self.budget or {},
@@ -53,12 +59,24 @@ class Config:
         data = list(self.fingerprint_inputs.values())
         return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
+    @property
+    def codex_home_digest(self):
+        """Identify a home mismatch on refusal without sending either path."""
+        return hashlib.sha256(json.dumps(self.codex_home).encode()).hexdigest()
 
-def environment_identity():
+    def subprocess_environment(self, env=None):
+        if env is None:
+            env = os.environ.copy()
+        # Keep Codex's implicit default when it still selects the captured home.
+        if env.get("CODEX_HOME") or self.codex_home != os.path.normcase(str(Path.home() / ".codex")):
+            env["CODEX_HOME"] = self.codex_home
+        return env
+
+
+def environment_identity(codex_home=None):
     """Only home paths and opaque profile selection, never auth/environment dumps."""
-    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser().absolute()
     profile = os.environ.get("CODEX_PROFILE")
-    return {"codex_home": os.path.normcase(os.path.realpath(home)),
+    return {"codex_home": codex_home or effective_codex_home(),
             "profile_selection": "bridge-managed permission profiles; no CLI --profile",
             "profile_selection_digest": hashlib.sha256(profile.encode()).hexdigest() if profile is not None else None}
 

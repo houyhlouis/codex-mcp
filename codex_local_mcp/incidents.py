@@ -14,6 +14,7 @@ from .store import Store, SCHEMA_VERSION
 
 FORMAT = 1
 MAX_TASKS, MAX_EVENTS, MAX_BYTES, MAX_NODES, MAX_DEPTH = 8, 1000, 2 * 1024 * 1024, 30000, 24
+MAX_REQUESTS = 1000
 BRIDGE_KINDS = frozenset("task_created input start_failed recovery resumed disconnected request response_sent request_rejected "
     "protocol_error event_gap steered settings_changed forked renamed archive unarchive deleted reverted imported subagent_discovered".split())
 METHODS = frozenset((*NATIVE_METHODS, *NATIVE_NOTIFICATIONS, *NATIVE_SERVER_REQUESTS,
@@ -66,7 +67,7 @@ class StructuralExport:
     def value(self, value, key="", depth=0):
         self.nodes += 1
         if self.nodes > MAX_NODES or depth > MAX_DEPTH:
-            raise BridgeError("Incident structure exceeds the export budget; select fewer events", code="result_too_large")
+            raise BridgeError("Incident structure exceeds the export budget", code="result_too_large")
         if isinstance(value, dict):
             if len(value) > 256:
                 self.partial = True
@@ -95,31 +96,96 @@ class StructuralExport:
         return omitted(value)
 
 
+def _ranked_requests(store, task_ids, events):
+    # Only identities visible in this event page can establish relevance.
+    # Fragment pages have no data and do not need to be reconstructed.
+    window = []
+    for event in events:
+        data = event.get("data")
+        if not isinstance(data, dict):
+            continue
+        request_id = None
+        if event["kind"] == "bridge/request":
+            request_id = data.get("id")
+            data = data.get("params", {})
+        elif event["kind"] == "bridge/response_sent":
+            request_id = data.get("request_id")
+        turn_id = None
+        if isinstance(data, dict):
+            turn = data.get("turn")
+            turn_id = data.get("turnId") or data.get("turn_id") or (turn.get("id") if isinstance(turn, dict) else None)
+        request_id = request_id if isinstance(request_id, str) else None
+        turn_id = turn_id if isinstance(turn_id, str) else None
+        if request_id or turn_id:
+            window.append((event["task_id"], request_id, turn_id))
+
+    # Rank only metadata. Fetch full request bodies only for the selected ids.
+    task_slots = ",".join("?" for _ in task_ids)
+    return store.db.execute(f"""
+        WITH event_window(task, request, turn) AS (
+            SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), json_extract(value,'$[2]')
+            FROM json_each(?))
+        SELECT rowid AS position, id, task_id, COUNT(*) OVER () AS total
+        FROM requests WHERE task_id IN ({task_slots})
+        ORDER BY CASE WHEN status='pending' THEN 0
+                      WHEN (task_id,id) IN (SELECT task,request FROM event_window) THEN 1
+                      WHEN (task_id,turn_id) IN (SELECT task,turn FROM event_window) THEN 2
+                      ELSE 3 END, rowid DESC LIMIT ?
+        """, (json.dumps(window), *task_ids, MAX_REQUESTS)).fetchall()
+
+
 def export_incident(store, task_ids, *, after=0, limit=200):
     if (not isinstance(task_ids, list) or not 1 <= len(task_ids) <= MAX_TASKS
             or any(not isinstance(key, str) or not key for key in task_ids)
             or type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= MAX_EVENTS):
         raise BridgeError("Select 1..8 task ids, a nonnegative cursor and 1..1000 events", code="invalid_arguments")
-    structure = StructuralExport()
-    tasks, requests, events = [], [], []
-    for key in dict.fromkeys(task_ids):
-        tasks.append(structure.value(store.get("tasks", key)))
-        for _, req in store.records("requests", task_id=key, limit=MAX_EVENTS + 1):
-            requests.append(structure.value(req))
+    task_ids = list(dict.fromkeys(task_ids))
+    task_records = [store.get("tasks", key) for key in task_ids]
     try:
-        page = store.events(after, limit, task_ids=list(dict.fromkeys(task_ids)))
+        page = store.events(after, limit, task_ids=task_ids)
     except BridgeError as exc:
         resume = exc.details.get("resume_after")
         if exc.code == "cursor_expired" and type(resume) is int:
             raise BridgeError(f"Incident journal cursor expired; preview again with --after {resume}",
                 code=exc.code, details=exc.details, ids=exc.ids, next_steps=[f"Preview again with --after {resume}"]) from exc
         raise
+    selected = _ranked_requests(store, task_ids, page["events"])
+    total = selected[0]["total"] if selected else 0
+    while True:
+        try:
+            return _fixture(store, task_records, page, selected, total)
+        except BridgeError as exc:
+            if exc.code == "invalid_arguments":
+                step = "Run server.py doctor with the same configuration and report the bridge version and this error"
+                raise BridgeError(f"Stored data could not form a structural incident. {exc}. {step}",
+                                  code="state_invalid", next_steps=[step]) from exc
+            if exc.code != "result_too_large":
+                raise
+            if not selected:
+                step = "Preview one task with --limit 1 or select a different event window with --after"
+                fallback = "If that still exceeds the budget, report the bridge version and this error"
+                raise BridgeError(f"{exc}. {step}. {fallback}", code=exc.code, next_steps=[step, fallback]) from exc
+            # Large request bodies can reach the node or byte budget first.
+            selected = selected[:len(selected) // 2]
+
+
+def _fixture(store, task_records, page, selected, total):
+    structure = StructuralExport()
+    tasks, requests, events = [], [], []
+    by_task = {task["id"]: [] for task in task_records}
+    for row in sorted(selected, key=lambda row: row["position"]):
+        by_task[row["task_id"]].append(row["id"])
+    # Keep the original record and reference order for complete snapshots.
+    for task in task_records:
+        tasks.append(structure.value(task))
+        for key in by_task[task["id"]]:
+            requests.append(structure.value(store.get("requests", key)))
     for index, entry in enumerate(page["events"]):
         if "fragment" in entry:
             # Fragment pages intentionally omit ownership fields. Read only
             # their identity, never reconstruct or retain the private fragment.
             identity = store.db.execute("SELECT task_id,kind FROM events WHERE seq=?", (entry["seq"],)).fetchone()
-            if not identity or identity[0] not in task_ids:
+            if not identity or identity[0] not in by_task:
                 raise BridgeError("Incident fragment identity changed; preview again", code="state_conflict")
             entry = {**entry, "task_id": identity[0], "kind": identity[1]}
             structure.partial = True
@@ -128,13 +194,15 @@ def export_incident(store, task_ids, *, after=0, limit=200):
             kind = "bridge/unknown"
         events.append({"order": index, "task": structure.ref(entry.get("task_id")), "kind": kind,
                        "data": structure.value(entry.get("data", {"fragment": entry.get("fragment", "")}))})
-    value = redact({"format": FORMAT, "purpose": "codex-local-mcp structural incident; fake harness only",
+    value = {"format": FORMAT, "purpose": "codex-local-mcp structural incident; fake harness only",
         "bridge_version": __version__, "schema_version": store.schema_version,
         "content_omitted": True, "tasks": tasks, "requests": requests, "events": events,
         "partial": bool(page["has_more"] or page.get("next_event_offset") or structure.partial),
-        "replay": {"consumer": "deterministic-fake-only", "injections": []}})
-    validate_incident(value)
-    return value
+        "replay": {"consumer": "deterministic-fake-only", "injections": []}}
+    if total > len(requests):
+        value["omitted_requests"] = total - len(requests)
+        value["partial"] = True
+    return validate_incident(redact(value))
 
 
 def fixture_bytes(value):
@@ -143,9 +211,12 @@ def fixture_bytes(value):
 
 def preview(value):
     data = fixture_bytes(value)
-    return {"preview_id": hashlib.sha256(data).hexdigest(), "bytes": len(data), "content_omitted": True,
-            "tasks": len(value["tasks"]), "events": len(value["events"]), "requests": len(value["requests"]),
-            "partial": value["partial"], "fixture": value}
+    report = {"preview_id": hashlib.sha256(data).hexdigest(), "bytes": len(data), "content_omitted": True,
+              "tasks": len(value["tasks"]), "events": len(value["events"]), "requests": len(value["requests"]),
+              "partial": value["partial"], "fixture": value}
+    if "omitted_requests" in value:
+        report["omitted_requests"] = value["omitted_requests"]
+    return report
 
 
 def write_export(value, output, confirmation):
@@ -172,15 +243,18 @@ def write_export(value, output, confirmation):
 
 
 def validate_incident(value):
-    if (not isinstance(value, dict) or set(value) != {"format", "purpose", "bridge_version", "schema_version", "content_omitted", "tasks", "requests", "events", "partial", "replay"}
+    if (not isinstance(value, dict) or set(value) - {"omitted_requests"} != {"format", "purpose", "bridge_version", "schema_version", "content_omitted", "tasks", "requests", "events", "partial", "replay"}
             or type(value.get("format")) is not int or value["format"] != FORMAT or value.get("content_omitted") is not True
             or not isinstance(value.get("tasks"), list) or not 1 <= len(value["tasks"]) <= MAX_TASKS
-            or not isinstance(value.get("requests"), list) or len(value["requests"]) > MAX_EVENTS
+            or not isinstance(value.get("requests"), list) or len(value["requests"]) > MAX_REQUESTS
             or not isinstance(value.get("events"), list) or len(value["events"]) > MAX_EVENTS
             or type(value.get("partial")) is not bool or value.get("purpose") != "codex-local-mcp structural incident; fake harness only"
             or not isinstance(value.get("bridge_version"), str) or not re.fullmatch(r"\d+\.\d+\.\d+", value["bridge_version"])
             or type(value.get("schema_version")) is not int):
         raise BridgeError("Unsupported or malformed structural incident fixture", code="invalid_arguments")
+    if "omitted_requests" in value and (not value["partial"] or type(value["omitted_requests"]) is not int
+            or not 1 <= value["omitted_requests"] <= 2**63 - 1):
+        raise BridgeError("Malformed incident request omission count", code="invalid_arguments")
     replay = value["replay"]
     if (not isinstance(replay, dict) or set(replay) != {"consumer", "injections"}
             or replay.get("consumer") != "deterministic-fake-only" or not isinstance(replay.get("injections"), list)):

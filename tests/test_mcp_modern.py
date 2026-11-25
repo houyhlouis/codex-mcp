@@ -75,7 +75,7 @@ class ModernMCPTest(ServiceHarness):
         self.assertEqual(discover["capabilities"]["extensions"], {MCP_TASKS_EXTENSION: {}})
         self.assertIn(META_SERVER, discover["_meta"])
         catalog = (await self.request("tools/list", caps={}))["result"]
-        self.assertLessEqual(encoded_size(catalog), MCP_MODERN_CATALOG_BUDGET)
+        self.assertGreaterEqual(MCP_MODERN_CATALOG_BUDGET - encoded_size(catalog), 400)
         self.assertTrue(all("outputSchema" in tool for tool in catalog["tools"]))
         self.bootstrap_mock.assert_not_awaited()
         self.assertFalse(self.service.backend.alive)

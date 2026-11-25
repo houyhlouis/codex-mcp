@@ -170,7 +170,7 @@ python3 server.py start
 ## 验证安装
 
 ```bash
-python3 server.py --version     # codex-local-mcp 0.2.3
+python3 server.py --version     # codex-local-mcp 0.2.4
 python3 server.py status        # "signed_in": true，codex_version 为 0.167.0 或更新
 python3 server.py call codex_models --args '{"limit": 3}'
 ```

@@ -11,7 +11,7 @@ Create a settings file only to change one of the defaults below.
 | Setting | Default | Description |
 |---|---|---|
 | `codex_binary` | `"codex"` (looked up on `PATH`) | The Codex program: a plain command name or an absolute path. See [How Codex is found](#how-codex-is-found) |
-| `state_dir` | `~/.local/state/codex-mcp` (macOS/Linux, or `$XDG_STATE_HOME/codex-mcp`); `%LOCALAPPDATA%\CodexMCP` (Windows) | Private folder for the broker's database, log and socket. Must be an absolute path of its own, not your home folder. On macOS/Linux the full socket path must fit in 100 bytes |
+| `state_dir` | `~/.local/state/codex-mcp` (macOS/Linux, or `$XDG_STATE_HOME/codex-mcp`); `%LOCALAPPDATA%\CodexMCP` (Windows) | Private folder for the broker's database, log and socket. Must be an absolute path of its own, not your home folder. On macOS/Linux the full socket path must fit in 100 bytes. Use one per Codex home; see [Codex home and state folders](#codex-home-and-state-folders) |
 | `max_tasks` | `4` | How many independent task families may run at the same time (1–32) |
 | `toolchain_paths` | `[]` | Extra **read-only** absolute paths that Codex's sandbox may use, such as a toolchain installed in an unusual place. System runtimes and the Codex executable are already readable |
 | `approval_relay` | `false` | If `true`, the main agent may *approve* requests on your behalf. Leave it off unless you fully trust the main agent. Not needed for *Approve for me* |
@@ -73,6 +73,23 @@ python3 server.py --config ~/.config/codex-mcp/config.toml stop
 ```
 
 After changing the file, run `stop` and restart your MCP client. A running broker refuses clients that use a different configuration.
+
+## Codex home and state folders
+
+When the configuration is loaded, the server fixes the effective Codex home and includes it in the broker's identity. The effective home is the `CODEX_HOME` environment variable, or `~/.codex` when `CODEX_HOME` is unset or empty. `~` is expanded, a relative path is taken from the folder the MCP client starts in, and symbolic links are resolved. On Windows, letter case does not matter. Different spellings of the same folder therefore count as the same home. Both the broker and the Codex process it starts use this captured home. The check that refuses a project folder containing Codex's `auth.json` uses the same home.
+
+One broker serves one state folder. A client whose effective home differs from the running broker's is refused before any tool runs with `broker_identity_mismatch` (`retryable: false`, `uncertain: false`):
+
+```text
+The running broker uses a different Codex home (CODEX_HOME). Stop it with `python server.py stop` (add the same --config option if you use one), then retry. Use separate state directories (state_dir) to run different Codex homes at the same time.
+```
+
+Any other difference in version or settings (and any mismatch against a broker from 0.2.3 or older) keeps the generic message: ``A broker started by a different version or configuration is still running for this state directory. Stop it with `python server.py stop` (add the same --config option if you use one), then retry``. Ordinary tool errors never contain the home paths. `server.py stop` and the broker's health report still work across a mismatch.
+
+- **Two Codex homes at the same time:** use two settings files with different absolute `state_dir` values, and start each MCP client with its own `--config`.
+- **Switching one state folder to another home:** run `python3 server.py --config FILE stop` (or `python3 server.py stop` without a settings file), then reconnect from the other home. Tasks saved in that state folder keep pointing to conversations in the old home, which Codex in the new home cannot resume. Prefer one state folder per Codex home.
+
+Changing the signed-in account inside the same home is not detected, because the home folder is the same. `CODEX_PROFILE` is not part of the identity: the bridge uses its own permission profiles and never passes `--profile`.
 
 ## Rules for the settings file
 

@@ -15,6 +15,7 @@ from .platforms import IS_WINDOWS, executable_argv, codex_environment
 from .contract import NATIVE_METHODS, OPTIONAL, REPLACEABLE_PROGRESS, codex_compatibility, method_unavailable
 
 MAX_FRAME = 16 * 1024 * 1024
+NATIVE_RPC_TIMEOUT = 30
 EVENT_MAX_COUNT = 1024
 EVENT_MAX_BYTES = 4 * 1024 * 1024
 EVENT_GAP_METHOD = "bridge/event_gap"
@@ -207,8 +208,9 @@ class AppServer:
         return self.events.backlog
 
     async def start(self):
+        env = self.config.subprocess_environment(codex_environment(self.config.codex))
         version = await asyncio.create_subprocess_exec(*executable_argv(self.config.codex), "--version",
-                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=env)
         try:
             out, _ = await asyncio.wait_for(version.communicate(), 10)
         except TimeoutError:
@@ -242,7 +244,7 @@ class AppServer:
             args.extend(["-c", key + "=" + toml_inline(value)])
         self.closed = False
         self.generation += 1
-        self.process = await asyncio.create_subprocess_exec(*args, cwd=self.config.state_dir, env=codex_environment(self.config.codex),
+        self.process = await asyncio.create_subprocess_exec(*args, cwd=self.config.state_dir, env=env,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE, limit=MAX_FRAME)
         self.events = EventBuffer(self.event_max_count, self.event_max_bytes)
@@ -252,7 +254,7 @@ class AppServer:
         try:
             await self.call("initialize", {"clientInfo": {"name": "codex_local_mcp",
                 "title": "Codex Local MCP", "version": __version__},
-                "capabilities": {"experimentalApi": True}}, timeout=30)
+                "capabilities": {"experimentalApi": True}})
             await self.send({"method": "initialized", "params": {}})
             if IS_WINDOWS:
                 effective = await self.call("config/read", {"includeLayers": False})
@@ -263,23 +265,77 @@ class AppServer:
             await self.close()
             raise BridgeError(f"Codex app-server startup failed: {exc}. " + "\n".join(self.stderr), code='transport_unavailable') from exc
 
-    async def send(self, message, *, before_send=None):
-        if not self.alive:
-            raise BridgeError("Codex connection is unavailable", code='transport_unavailable')
-        process, generation = self.process, self.generation
-        async with self.write_lock:
-            if not self.alive or self.process is not process or self.generation != generation:
-                raise BridgeError("Codex connection changed before native write; resume before retrying", code='transport_unavailable')
-            if before_send is not None:
-                before_send()
-            data = (json.dumps(message, ensure_ascii=False) + "\n").encode()
-            observer = getattr(self, "on_write", None)
-            if observer is not None:
-                observer()
-            process.stdin.write(data)
-            await process.stdin.drain()
+    def _abort_connection(self, process, generation):
+        if self.process is process and self.generation == generation and self.alive:
+            # Fence queued writers immediately. The reader handles pending calls
+            # and on_exit. Waiting for close here could join our own event callback.
+            self.closed = True
+            if self.reader_task:
+                # Start recovery even if a descendant keeps stdout open. Give a
+                # newly scheduled reader a chance to install its cleanup first.
+                asyncio.get_running_loop().call_soon(self.reader_task.cancel)
+            if self.stderr_task:
+                self.stderr_task.cancel()
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
 
-    async def call(self, method, params, timeout=30, *, before_send=None):
+    async def send(self, message, *, before_send=None, deadline=None):
+        loop = asyncio.get_running_loop()
+        if deadline is None:
+            deadline = loop.time() + NATIVE_RPC_TIMEOUT
+        if not self.alive:
+            raise BridgeError("Codex connection is unavailable", code='transport_unavailable', retryable=True, uncertain=False)
+        process, generation = self.process, self.generation
+        write_started = False
+
+        def check_deadline():
+            # The guards, an uncontended lock and a ready drain need never yield.
+            if loop.time() >= deadline:
+                raise TimeoutError
+
+        try:
+            async with asyncio.timeout_at(deadline):
+                async with self.write_lock:
+                    if not self.alive or self.process is not process or self.generation != generation:
+                        raise BridgeError("Codex connection changed before native write; resume before retrying",
+                                          code='transport_unavailable', retryable=True, uncertain=False)
+                    check_deadline()
+                    if before_send is not None:
+                        write_started = True
+                        before_send()
+                    data = (json.dumps(message, ensure_ascii=False) + "\n").encode()
+                    check_deadline()
+                    write_started = True
+                    observer = getattr(self, "on_write", None)
+                    if observer is not None:
+                        observer()
+                        check_deadline()
+                    try:
+                        process.stdin.write(data)
+                        await process.stdin.drain()
+                    except ConnectionError as exc:
+                        self._abort_connection(process, generation)
+                        raise BridgeError("Codex connection failed during native write", code='transport_unavailable') from exc
+                    check_deadline()
+                    if not self.alive or self.process is not process or self.generation != generation:
+                        raise BridgeError("Codex connection changed during native write", code='transport_unavailable')
+        except TimeoutError as exc:
+            # asyncio's timeout traceback otherwise retains the failed task.
+            traceback.clear_frames(exc.__traceback__)
+            if not write_started:
+                raise BridgeError("Codex native message timed out before it was sent", code='native_timeout',
+                                  retryable=True, uncertain=False,
+                                  next_steps=["Refresh task or request state before retrying"]) from exc
+            self._abort_connection(process, generation)
+            raise BridgeError("Codex native write timed out. The outcome is uncertain.", code='native_timeout') from exc
+        except asyncio.CancelledError:
+            if write_started:
+                self._abort_connection(process, generation)
+            raise
+
+    async def call(self, method, params, timeout=None, *, before_send=None):
         def check_available():
             if method in self.unavailable_methods:
                 raise OptionalCapabilityUnavailable(method, self.version, {})
@@ -290,32 +346,38 @@ class AppServer:
         process, generation = self.process, self.generation
         self.next_id += 1
         request_id = self.next_id
-        future = asyncio.get_running_loop().create_future()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + (NATIVE_RPC_TIMEOUT if timeout is None else timeout)
+        future = loop.create_future()
         self.pending[request_id] = future
         try:
-            await self.send({"id": request_id, "method": method, "params": params}, before_send=check_available)
-            result = await asyncio.wait_for(future, timeout)
-            if self.process is not process or self.generation != generation:
+            await self.send({"id": request_id, "method": method, "params": params}, before_send=check_available, deadline=deadline)
+            async with asyncio.timeout_at(deadline):
+                result = await future
+            if self.closed or self.process is not process or self.generation != generation:
                 raise BridgeError("Codex connection changed while awaiting native response; resume before retrying", code='transport_unavailable')
             # A late success cannot undo an unavailable observation from this
             # connection. Reconnecting resets the capability observations.
             return result
         except RpcError as exc:
-            if self.process is not process or self.generation != generation:
+            if self.closed or self.process is not process or self.generation != generation:
                 raise BridgeError("Codex connection changed while awaiting native response; resume before retrying", code='transport_unavailable') from exc
             if NATIVE_METHODS.get(method) == OPTIONAL and method_unavailable(exc.error):
                 self.unavailable_methods.add(method)
                 raise OptionalCapabilityUnavailable(method, self.version, exc.error) from exc
             raise
         except TimeoutError as exc:
+            # The frame drained. Retiring its id lets the reader discard a late reply.
+            traceback.clear_frames(exc.__traceback__)
             raise BridgeError(f"Codex {method} response timed out; action outcome may be uncertain. Do not blindly retry", code='native_timeout') from exc
         finally:
             self.pending.pop(request_id, None)
-            if future.done() and not future.cancelled():
+            if not future.done():
+                future.cancel()
+            elif not future.cancelled():
                 # Disconnect can cancel the callback waiting on this future.
                 error = future.exception()
                 if error is not None:
-                    # wait_for's completed frame still owns the failed future.
                     # Keep traceback locations, but release those frame locals.
                     traceback.clear_frames(error.__traceback__)
             future = error = None

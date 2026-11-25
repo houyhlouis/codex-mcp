@@ -27,7 +27,7 @@ Both must pass. CI runs them on all three platforms. Optional checks (protocol s
 | Recovery reports and watching tasks | `reconciliation.py`, `outcomes.py` | `test_reconciliation_report.py`, `test_outcomes.py` |
 | The MCP side: handshake, prompts, MCP 2026-07-28, Tasks | `mcp.py`, `mcp_modern.py`, `protocol_tasks.py` | `test_mcp.py`, `test_mcp_modern.py`, `test_modern_wire.py` |
 | Starting and finding the broker; Windows pipes and permissions | `broker.py`, `platforms.py`, `windows.py` | `test_platforms.py`, `test_windows_pipes.py`, `test_pipe_control.py` |
-| `doctor`, `incident-export` | `diagnostics.py`, `incidents.py` | `test_diagnostics.py`, `test_incidents.py` |
+| `doctor`, `incident-export` | `diagnostics.py`, `incidents.py` | `test_diagnostics.py`, `test_incidents.py`, `test_incident_request_bound.py` |
 | Documentation | `README*.md`, `docs/`, `examples/` | `test_documentation_contract.py` checks every JSON example, tool name and internal link |
 
 Two things make the tests trustworthy, and a change must keep both:

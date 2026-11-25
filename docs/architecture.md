@@ -58,7 +58,7 @@ your project / OpenAI model service
 - The first real tool call starts the broker, or connects to the one already running. A startup lock prevents two clients from starting two brokers. The broker runs detached, so it survives the client.
 - The broker starts `codex app-server` on demand. One app-server hosts all conversations.
 - `server.py stop` asks the broker to shut down and waits until the process has exited. On shutdown, the broker stops Codex.
-- The broker records a fingerprint of the server version and settings. A client with a different fingerprint is refused, so an updated server never silently talks to an old broker.
+- The broker records a fingerprint of the server version, settings and canonical effective Codex home (`CODEX_HOME`, or `~/.codex` when unset or empty), and runs `codex app-server` with that captured home. A client with a different fingerprint is refused before any tool runs, while `server.py stop` and the health report remain reachable.
 
 ## A conversation, step by step
 
@@ -105,6 +105,7 @@ The server never calls the main agent's model itself. The main agent has to poll
 - Changes to a task go through `lifecycle.py` and update single fields of the newest record. A slow call to Codex can therefore never write an old copy of a task over newer events. Results such as the diff carry the ID of the turn they belong to.
 - A project is reserved through *workspace claims* stored in the database, not through the task status alone. A queued instruction or an active goal therefore keeps the project reserved between turns and across restarts. When a turn ends, the broker checks Codex by itself and releases the claims that Codex confirms are finished. See [Why a project stays busy](tools.md#why-a-project-stays-busy).
 - Starting work takes a short global lock, only to check the limits and record the operation key. Calls to Codex then run under one lock per task family. Interrupts and answers bypass that lock, so a slow call for one project does not delay stopping another.
+- Outbound messages to Codex are bounded by a 30-second limit covering waiting to send, sending and (for requests) waiting for the reply. A timeout before anything is written is retryable, whereas a timeout while writing closes the shared Codex connection and triggers recovery so one stuck write cannot block other task families.
 - Events from Codex wait in a bounded queue (1,024 events or 4 MiB). When it is full, only streamed progress deltas are dropped, and a `bridge/event_gap` marker is journaled. If the protected events alone would exceed the limit, the broker disconnects from Codex and the active tasks become `needs_resume`.
 - A message from Codex that this version does not understand is contained to its own task where that is safe. A malformed request is rejected and grants nothing.
 - Every tool result stays under 8 MiB. Long lists are paged and large requests are summarised, with the full content available on request.

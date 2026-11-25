@@ -302,11 +302,12 @@ class ExtendedControls:
 
     async def subagents(self, task_id, cursor=None, limit=50, refresh=True, archived=False, offset=0):
         parent = self.task(task_id)
-        result = {"data": [], "nextCursor": None}
+        next_cursor = None
         if refresh:
             await self.ensure_backend()
             result = await self.backend.call("thread/list", {"ancestorThreadId": parent["thread_id"], "cursor": cursor,
                 "limit": limit, "archived": archived, "sourceKinds": ["subAgent", "subAgentThreadSpawn", "subAgentReview", "subAgentCompact", "subAgentOther"]})
+            next_cursor = result.get("nextCursor")
             for thread in result["data"]:
                 known = self.task_for_thread(thread["id"])
                 if not archived and (not known or known["id"] not in self.loaded):
@@ -316,8 +317,17 @@ class ExtendedControls:
         records = [self.get(t["id"]) for t in children[:limit]]
         while len(records) > 1 and result_size({"subagents": records}) > 6 * 1024 * 1024:
             records.pop()
-        return {"subagents": records, "next_offset": offset + len(records) if len(records) < len(children) else None,
-                "nextCursor": result.get("nextCursor"), "note": "Native children are verified descendants, not unrelated sessions"}
+        next_offset = offset + len(records) if len(records) < len(children) else None
+        next_steps = []
+        if refresh or next_offset is not None:
+            arguments = {"task_id": task_id, "limit": limit, "archived": archived}
+            if next_cursor is not None:
+                arguments.update(refresh=True, cursor=next_cursor, offset=offset)
+            else:
+                arguments.update(refresh=False, offset=0 if refresh else next_offset)
+            next_steps.append({"tool": "codex_subagents", "arguments": arguments})
+        return {"subagents": records, "next_offset": next_offset, "nextCursor": next_cursor, "next_steps": next_steps,
+                "note": "With refresh=true, subagents is a local snapshot of verified descendants and can repeat children across discovery pages. Parent events include child requests."}
 
     async def delegate(self, task_id, prompt, expected_turn_id=None, contract=None):
         task = self.task(task_id)
